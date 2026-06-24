@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SOS Resolutor</title>
+  <link rel="stylesheet" href="styles.css" />
+  <meta name="theme-color" content="#2563eb" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">Sistema SOS Municipal</div>
+        <h1>Resolutor</h1>
+      </div>
+      <div id="connectionPill" class="pill offline">offline</div>
+    </header>
+
+    <section id="loginView" class="card login-card">
+      <img src="logo.png" class="logo" alt="VS&TI" onerror="this.style.display='none'" />
+      <h2>Ingreso resolutor</h2>
+      <p class="muted">Ingresa con el teléfono registrado en la plataforma.</p>
+
+      <label>Teléfono</label>
+      <input id="phoneInput" type="tel" placeholder="+569XXXXXXXX" autocomplete="tel" />
+
+      <button id="loginButton" class="primary full">Entrar</button>
+      <div id="loginError" class="error"></div>
+    </section>
+
+    <main id="appView" hidden>
+      <section class="card profile-card">
+        <div class="profile-row">
+          <div class="avatar">👮</div>
+          <div>
+            <h2 id="resolverName">Resolutor</h2>
+            <div class="muted" id="resolverMeta">-</div>
+          </div>
+        </div>
+
+        <div class="status-grid">
+          <button id="availableButton" class="status-btn available">Disponible</button>
+          <button id="busyButton" class="status-btn busy">Ocupado / pausa</button>
+        </div>
+
+        <div class="info-grid">
+          <div>
+            <span>Estado</span>
+            <strong id="resolverStatus">-</strong>
+          </div>
+          <div>
+            <span>GPS</span>
+            <strong id="gpsStatus">pendiente</strong>
+          </div>
+          <div>
+            <span>Precisión</span>
+            <strong id="accuracyStatus">-</strong>
+          </div>
+          <div>
+            <span>Casos</span>
+            <strong id="ticketCount">0</strong>
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button id="refreshButton" class="secondary">Actualizar</button>
+          <button id="logoutButton" class="ghost">Salir</button>
+        </div>
+      </section>
+
+      <section class="section-head">
+        <h2>Casos asignados / disponibles</h2>
+        <span id="lastUpdate">-</span>
+      </section>
+
+      <section id="ticketsList" class="tickets-list"></section>
+      <section id="emptyState" class="card empty" hidden>
+        <div class="big-icon">✅</div>
+        <h2>Sin casos pendientes</h2>
+        <p class="muted">Mantente disponible. La central puede asignarte una emergencia.</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
