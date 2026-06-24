@@ -278,3 +278,103 @@ button:disabled {
   .button-row { flex-direction: column; }
   button { width: 100%; }
 }
+
+textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  border: 2px solid #d1d5db;
+  border-radius: 16px;
+  padding: 16px;
+  font-size: 18px;
+  font-family: inherit;
+}
+
+.small-status {
+  margin-top: 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.field-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(15, 23, 42, .55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+}
+
+.field-card {
+  width: min(720px, 100%);
+  background: white;
+  border-radius: 26px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.28);
+}
+
+.field-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.icon-button {
+  width: auto;
+  min-width: 54px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 16px;
+  padding: 12px 16px;
+}
+
+.field-actions-title {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.field-action-button {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.recording-banner {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 10000;
+  background: #dc2626;
+  color: white;
+  border-radius: 18px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 22px;
+  font-weight: 900;
+  box-shadow: 0 12px 30px rgba(220, 38, 38, .35);
+}
+
+.rec-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  animation: recPulse 1s infinite;
+}
+
+@keyframes recPulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.45); opacity: .55; }
+  100% { transform: scale(1); opacity: 1; }
+}

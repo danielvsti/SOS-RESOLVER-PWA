@@ -83,6 +83,44 @@
     </main>
   </div>
 
+
+  <div id="recordingBanner" class="recording-banner" hidden>
+    <span class="rec-dot"></span>
+    <span>Grabando audio</span>
+    <span id="recordingTimer">00:00</span>
+  </div>
+
+  <div id="fieldPanel" class="field-panel" hidden>
+    <div class="field-card">
+      <div class="field-head">
+        <div>
+          <div class="eyebrow">Bitácora terreno</div>
+          <h2 id="fieldPanelTitle">Registrar situación</h2>
+        </div>
+        <button id="closeFieldPanelButton" class="icon-button" type="button">✖</button>
+      </div>
+
+      <div id="fieldTextAreaWrap">
+        <p class="muted">Describe lo que ves en terreno. Esto queda asociado al ticket y visible para la central.</p>
+        <textarea id="fieldTextArea" placeholder="Ej: Llegué al lugar. Hay humo visible desde el segundo piso..."></textarea>
+        <button id="sendFieldTextButton" class="primary full" type="button">Enviar reporte de situación</button>
+      </div>
+
+      <div id="fieldAudioWrap" hidden>
+        <p class="muted">Graba un audio breve para complementar el caso. Máximo 30 segundos.</p>
+        <button id="startFieldAudioButton" class="danger full" type="button">🎙️ Iniciar grabación</button>
+        <div id="fieldAudioStatus" class="muted small-status">Listo para grabar.</div>
+      </div>
+
+      <div id="fieldVideoWrap" hidden>
+        <p class="muted">Graba o sube un video corto como evidencia del procedimiento.</p>
+        <button id="pickFieldVideoButton" class="primary full" type="button">📹 Grabar / subir video</button>
+        <input id="fieldVideoInput" type="file" accept="video/*" capture="environment" hidden />
+        <div id="fieldVideoStatus" class="muted small-status">Videos de hasta 25 MB para la demo.</div>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

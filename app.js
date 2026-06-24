@@ -19,12 +19,35 @@ const availableButton = document.getElementById("availableButton");
 const busyButton = document.getElementById("busyButton");
 const refreshButton = document.getElementById("refreshButton");
 const logoutButton = document.getElementById("logoutButton");
+const fieldPanel = document.getElementById("fieldPanel");
+const fieldPanelTitle = document.getElementById("fieldPanelTitle");
+const closeFieldPanelButton = document.getElementById("closeFieldPanelButton");
+const fieldTextAreaWrap = document.getElementById("fieldTextAreaWrap");
+const fieldTextArea = document.getElementById("fieldTextArea");
+const sendFieldTextButton = document.getElementById("sendFieldTextButton");
+const fieldAudioWrap = document.getElementById("fieldAudioWrap");
+const startFieldAudioButton = document.getElementById("startFieldAudioButton");
+const fieldAudioStatus = document.getElementById("fieldAudioStatus");
+const fieldVideoWrap = document.getElementById("fieldVideoWrap");
+const pickFieldVideoButton = document.getElementById("pickFieldVideoButton");
+const fieldVideoInput = document.getElementById("fieldVideoInput");
+const fieldVideoStatus = document.getElementById("fieldVideoStatus");
+const recordingBanner = document.getElementById("recordingBanner");
+const recordingTimer = document.getElementById("recordingTimer");
 
 let currentUser = null;
 let currentLocation = null;
 let currentStatus = localStorage.getItem("resolver_status") || "AVAILABLE";
 let refreshTimer = null;
 let locationTimer = null;
+let activeFieldTicketId = null;
+let activeFieldMode = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let audioStream = null;
+let recordingTimeout = null;
+let recordingTimerInterval = null;
+let recordingStartedAt = null;
 
 function setConnection(ok) {
   connectionPill.textContent = ok ? "online" : "offline";
@@ -240,6 +263,265 @@ function formatAge(createdAt) {
   return `${min}m ${sec}s`;
 }
 
+
+function formatRecordingTime(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function updateRecordingTimer() {
+  if (!recordingStartedAt) return;
+  recordingTimer.textContent = formatRecordingTime(Date.now() - recordingStartedAt);
+}
+
+function startRecordingUI() {
+  recordingStartedAt = Date.now();
+  updateRecordingTimer();
+  recordingBanner.hidden = false;
+  navigator.vibrate?.(80);
+  clearInterval(recordingTimerInterval);
+  recordingTimerInterval = setInterval(updateRecordingTimer, 500);
+}
+
+function stopRecordingUI() {
+  clearInterval(recordingTimerInterval);
+  recordingTimerInterval = null;
+  recordingStartedAt = null;
+  recordingBanner.hidden = true;
+  startFieldAudioButton.textContent = "🎙️ Iniciar grabación";
+  navigator.vibrate?.([60, 80, 60]);
+}
+
+function openFieldPanel(ticketId, mode) {
+  activeFieldTicketId = ticketId;
+  activeFieldMode = mode;
+
+  fieldTextAreaWrap.hidden = mode !== "text";
+  fieldAudioWrap.hidden = mode !== "audio";
+  fieldVideoWrap.hidden = mode !== "video";
+
+  fieldPanelTitle.textContent = mode === "text"
+    ? "Reporte de situación"
+    : mode === "audio"
+    ? "Audio de terreno"
+    : "Video de evidencia";
+
+  fieldTextArea.value = "";
+  fieldAudioStatus.textContent = "Listo para grabar.";
+  fieldVideoStatus.textContent = "Videos de hasta 25 MB para la demo.";
+  fieldPanel.hidden = false;
+}
+
+function closeFieldPanel() {
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  }
+  activeFieldTicketId = null;
+  activeFieldMode = null;
+  fieldPanel.hidden = true;
+}
+
+function requireActiveFieldTicket() {
+  if (!activeFieldTicketId) {
+    alert("Selecciona un caso primero.");
+    return false;
+  }
+  return true;
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function getPreferredAudioOptions() {
+  if (!window.MediaRecorder) return {};
+  const candidates = [
+    "audio/mp4",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus"
+  ];
+
+  for (const mimeType of candidates) {
+    if (MediaRecorder.isTypeSupported(mimeType)) {
+      return { mimeType };
+    }
+  }
+
+  return {};
+}
+
+function extensionForMime(mimeType, fallback) {
+  const clean = String(mimeType || "").split(";")[0];
+  const map = {
+    "audio/mp4": "m4a",
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/wav": "wav",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm"
+  };
+  return map[clean] || fallback;
+}
+
+async function sendFieldText() {
+  if (!requireActiveFieldTicket()) return;
+
+  const message = fieldTextArea.value.trim();
+  if (!message) {
+    alert("Escribe un reporte de situación.");
+    return;
+  }
+
+  sendFieldTextButton.disabled = true;
+  sendFieldTextButton.textContent = "Enviando...";
+
+  try {
+    const res = await fetch(`${API}/tickets/${activeFieldTicketId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender_role: "RESOLVER",
+        sender_name: currentUser?.full_name || "Resolutor",
+        message
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.status !== "ok") {
+      throw new Error(data.message || "No fue posible enviar el reporte");
+    }
+
+    fieldTextArea.value = "";
+    fieldPanel.hidden = true;
+    await refreshState();
+    alert("Reporte enviado a la central");
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    sendFieldTextButton.disabled = false;
+    sendFieldTextButton.textContent = "Enviar reporte de situación";
+  }
+}
+
+async function uploadFieldMedia(mediaType, blob, fileName) {
+  if (!requireActiveFieldTicket()) return;
+
+  const dataUrl = await blobToDataUrl(blob);
+  const res = await fetch(`${API}/tickets/${activeFieldTicketId}/media`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sender_role: "RESOLVER",
+      sender_name: currentUser?.full_name || "Resolutor",
+      media_type: mediaType,
+      file_name: fileName,
+      data_url: dataUrl
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok || data.status !== "ok") {
+    throw new Error(data.message || `No fue posible subir ${mediaType}`);
+  }
+
+  await refreshState();
+}
+
+async function toggleFieldAudioRecording() {
+  if (!requireActiveFieldTicket()) return;
+
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    alert("Este navegador no permite grabar audio desde la PWA.");
+    return;
+  }
+
+  try {
+    audioChunks = [];
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(audioStream, getPreferredAudioOptions());
+
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunks.push(event.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      clearTimeout(recordingTimeout);
+      audioStream?.getTracks().forEach(track => track.stop());
+      stopRecordingUI();
+
+      const mimeType = mediaRecorder.mimeType || audioChunks[0]?.type || "audio/webm";
+      const audioBlob = new Blob(audioChunks, { type: mimeType });
+      const ext = extensionForMime(mimeType, "webm");
+
+      fieldAudioStatus.textContent = "Subiendo audio...";
+
+      try {
+        await uploadFieldMedia("audio", audioBlob, `audio-resolutor-${Date.now()}.${ext}`);
+        fieldAudioStatus.textContent = "Audio enviado a la central.";
+        fieldPanel.hidden = true;
+        alert("Audio enviado a la central");
+      } catch (error) {
+        console.error(error);
+        fieldAudioStatus.textContent = "No se pudo enviar el audio.";
+        alert(error.message);
+      }
+    };
+
+    mediaRecorder.start();
+    startFieldAudioButton.textContent = "⏹️ Detener y enviar audio";
+    fieldAudioStatus.textContent = "Grabando. Describe brevemente lo que ocurre en terreno.";
+    startRecordingUI();
+
+    recordingTimeout = setTimeout(() => {
+      if (mediaRecorder?.state === "recording") mediaRecorder.stop();
+    }, 30000);
+  } catch (error) {
+    console.error(error);
+    fieldAudioStatus.textContent = "No se pudo acceder al micrófono.";
+  }
+}
+
+async function uploadFieldVideo() {
+  if (!requireActiveFieldTicket()) return;
+  const file = fieldVideoInput.files?.[0];
+  if (!file) return;
+
+  if (file.size > 25 * 1024 * 1024) {
+    alert("El video es muy grande para la demo. Usa un clip más corto.");
+    fieldVideoInput.value = "";
+    return;
+  }
+
+  fieldVideoStatus.textContent = "Subiendo video...";
+
+  try {
+    await uploadFieldMedia("video", file, file.name || `video-resolutor-${Date.now()}.mp4`);
+    fieldVideoStatus.textContent = "Video enviado a la central.";
+    fieldPanel.hidden = true;
+    alert("Video enviado a la central");
+  } catch (error) {
+    console.error(error);
+    fieldVideoStatus.textContent = "No se pudo enviar el video.";
+    alert(error.message);
+  } finally {
+    fieldVideoInput.value = "";
+  }
+}
+
 function renderTickets(tickets) {
   ticketsList.innerHTML = "";
   emptyState.hidden = tickets.length > 0;
@@ -298,12 +580,26 @@ function renderTickets(tickets) {
       addButton(actions, "Resolver", "success", () => resolveTicket(ticket.id));
     }
 
+    if (mine && !["RESOLVED", "CLOSED", "CANCELLED"].includes(ticket.state)) {
+      addActionTitle(actions, "Bitácora de terreno");
+      addButton(actions, "📝 Reporte situación", "field-action-button", () => openFieldPanel(ticket.id, "text"));
+      addButton(actions, "🎙️ Audio terreno", "field-action-button", () => openFieldPanel(ticket.id, "audio"));
+      addButton(actions, "📹 Video evidencia", "field-action-button", () => openFieldPanel(ticket.id, "video"));
+    }
+
     if (ticket.latitude && ticket.longitude) {
       addButton(actions, "Ver mapa", "secondary", () => {
         window.open(`https://maps.google.com/?q=${ticket.latitude},${ticket.longitude}`, "_blank");
       });
     }
   });
+}
+
+function addActionTitle(container, label) {
+  const title = document.createElement("div");
+  title.className = "field-actions-title";
+  title.textContent = label;
+  container.appendChild(title);
 }
 
 function addButton(container, label, cssClass, handler) {
@@ -364,6 +660,12 @@ function resolveTicket(ticketId) {
   if (notes === null) return;
   postTicketAction(ticketId, "resolve", { resolution_notes: notes });
 }
+
+closeFieldPanelButton.onclick = closeFieldPanel;
+sendFieldTextButton.onclick = sendFieldText;
+startFieldAudioButton.onclick = toggleFieldAudioRecording;
+pickFieldVideoButton.onclick = () => fieldVideoInput.click();
+fieldVideoInput.onchange = uploadFieldVideo;
 
 loginButton.onclick = login;
 refreshButton.onclick = refreshState;
