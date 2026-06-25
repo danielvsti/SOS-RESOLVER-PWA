@@ -34,6 +34,13 @@ const fieldVideoInput = document.getElementById("fieldVideoInput");
 const fieldVideoStatus = document.getElementById("fieldVideoStatus");
 const recordingBanner = document.getElementById("recordingBanner");
 const recordingTimer = document.getElementById("recordingTimer");
+const routePanel = document.getElementById("routePanel");
+const routeTitle = document.getElementById("routeTitle");
+const routeSubtitle = document.getElementById("routeSubtitle");
+const routeStatus = document.getElementById("routeStatus");
+const closeRoutePanelButton = document.getElementById("closeRoutePanelButton");
+const closeRoutePanelButtonBottom = document.getElementById("closeRoutePanelButtonBottom");
+const recenterRouteButton = document.getElementById("recenterRouteButton");
 
 let currentUser = null;
 let currentLocation = null;
@@ -48,6 +55,10 @@ let audioStream = null;
 let recordingTimeout = null;
 let recordingTimerInterval = null;
 let recordingStartedAt = null;
+let routeMap = null;
+let routeLayer = null;
+let routeMarkers = [];
+let activeRouteTicket = null;
 
 function setConnection(ok) {
   connectionPill.textContent = ok ? "online" : "offline";
@@ -532,6 +543,218 @@ function callNeighbor(phone) {
   window.location.href = `tel:${phone}`;
 }
 
+function formatDistance(meters) {
+  if (!Number.isFinite(meters)) return "-";
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${Math.round(meters)} m`;
+}
+
+function formatEta(seconds) {
+  if (!Number.isFinite(seconds)) return "-";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return `${minutes} min`;
+}
+
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (v) => v * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function ticketLabel(ticket) {
+  return `${typeIcon(ticket.alert_type)} ${ticket.title || ticket.alert_type || "Emergencia"} #${String(ticket.id).slice(0, 8).toUpperCase()}`;
+}
+
+function getFreshResolverPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("GPS no disponible en este dispositivo."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        currentLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: Math.round(position.coords.accuracy)
+        };
+
+        gpsStatus.textContent = "OK";
+        accuracyStatus.textContent = `${currentLocation.accuracy} m`;
+
+        try {
+          await sendResolverLocation(currentStatus);
+        } catch (error) {
+          console.warn("No se pudo reportar ubicación al backend", error);
+        }
+
+        resolve(currentLocation);
+      },
+      () => reject(new Error("No se pudo obtener tu ubicación actual.")),
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 3000
+      }
+    );
+  });
+}
+
+function initRouteMap() {
+  if (routeMap) return;
+
+  routeMap = L.map("routeMap", {
+    zoomControl: true
+  }).setView([-33.01895, -71.55090], 15);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
+  }).addTo(routeMap);
+}
+
+function clearRouteMap() {
+  if (routeLayer) {
+    routeMap.removeLayer(routeLayer);
+    routeLayer = null;
+  }
+
+  routeMarkers.forEach(marker => routeMap.removeLayer(marker));
+  routeMarkers = [];
+}
+
+function routeIcon(kind) {
+  const html = kind === "resolver"
+    ? `<div class="resolver-route-marker">👮</div>`
+    : `<div class="incident-route-marker">🚨</div>`;
+
+  return L.divIcon({
+    className: "",
+    html,
+    iconSize: [48, 48],
+    iconAnchor: [24, 24]
+  });
+}
+
+async function renderRoute(ticket) {
+  initRouteMap();
+  clearRouteMap();
+
+  setTimeout(() => routeMap.invalidateSize(), 80);
+
+  if (!ticket?.latitude || !ticket?.longitude) {
+    routeStatus.textContent = "Este caso no tiene coordenadas válidas.";
+    return;
+  }
+
+  routeStatus.textContent = "Obteniendo tu ubicación actual...";
+
+  let origin;
+  try {
+    origin = await getFreshResolverPosition();
+  } catch (error) {
+    if (currentLocation?.latitude && currentLocation?.longitude) {
+      origin = currentLocation;
+      routeStatus.textContent = "Usando la última ubicación conocida del resolutor.";
+    } else {
+      routeStatus.textContent = error.message;
+      return;
+    }
+  }
+
+  const dest = {
+    latitude: Number(ticket.latitude),
+    longitude: Number(ticket.longitude)
+  };
+
+  const originLatLng = [origin.latitude, origin.longitude];
+  const destLatLng = [dest.latitude, dest.longitude];
+
+  routeMarkers.push(
+    L.marker(originLatLng, { icon: routeIcon("resolver") })
+      .addTo(routeMap)
+      .bindPopup("Tu ubicación actual")
+  );
+
+  routeMarkers.push(
+    L.marker(destLatLng, { icon: routeIcon("incident") })
+      .addTo(routeMap)
+      .bindPopup(ticketLabel(ticket))
+  );
+
+  const directDistance = distanceMeters(
+    origin.latitude,
+    origin.longitude,
+    dest.latitude,
+    dest.longitude
+  );
+
+  routeStatus.textContent = "Calculando ruta...";
+
+  try {
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${dest.longitude},${dest.latitude}?overview=full&geometries=geojson&steps=false`;
+    const res = await fetch(osrmUrl);
+    const data = await res.json();
+
+    if (!res.ok || data.code !== "Ok" || !data.routes?.length) {
+      throw new Error("Ruta no disponible");
+    }
+
+    const route = data.routes[0];
+    const latLngs = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+
+    routeLayer = L.polyline(latLngs, {
+      weight: 6,
+      opacity: .9
+    }).addTo(routeMap);
+
+    routeMap.fitBounds(routeLayer.getBounds(), {
+      padding: [30, 30],
+      maxZoom: 17
+    });
+
+    routeStatus.innerHTML = `Ruta estimada: <strong>${formatDistance(route.distance)}</strong> · ETA: <strong>${formatEta(route.duration)}</strong> · distancia directa: ${formatDistance(directDistance)}`;
+  } catch (error) {
+    routeLayer = L.polyline([originLatLng, destLatLng], {
+      weight: 5,
+      opacity: .8,
+      dashArray: "8, 8"
+    }).addTo(routeMap);
+
+    routeMap.fitBounds(routeLayer.getBounds(), {
+      padding: [30, 30],
+      maxZoom: 17
+    });
+
+    routeStatus.innerHTML = `No fue posible calcular ruta vial. Mostrando línea directa: <strong>${formatDistance(directDistance)}</strong>.`;
+  }
+}
+
+function openRoutePanel(ticket) {
+  activeRouteTicket = ticket;
+  routeTitle.textContent = ticketLabel(ticket);
+  routeSubtitle.textContent = `${ticket.citizen_name || "Vecino"} · ${ticket.latitude}, ${ticket.longitude}`;
+  routePanel.hidden = false;
+  renderRoute(ticket);
+}
+
+function closeRoutePanel() {
+  routePanel.hidden = true;
+  activeRouteTicket = null;
+}
+
+function refreshActiveRoute() {
+  if (!activeRouteTicket) return;
+  renderRoute(activeRouteTicket);
+}
+
 function renderTickets(tickets) {
   ticketsList.innerHTML = "";
   emptyState.hidden = tickets.length > 0;
@@ -603,9 +826,7 @@ function renderTickets(tickets) {
     }
 
     if (ticket.latitude && ticket.longitude) {
-      addButton(actions, "Ver mapa", "secondary", () => {
-        window.open(`https://maps.google.com/?q=${ticket.latitude},${ticket.longitude}`, "_blank");
-      });
+      addButton(actions, "🗺️ Ver mapa y ruta", "secondary", () => openRoutePanel(ticket));
     }
   });
 }
@@ -681,6 +902,10 @@ sendFieldTextButton.onclick = sendFieldText;
 startFieldAudioButton.onclick = toggleFieldAudioRecording;
 pickFieldVideoButton.onclick = () => fieldVideoInput.click();
 fieldVideoInput.onchange = uploadFieldVideo;
+
+closeRoutePanelButton.onclick = closeRoutePanel;
+closeRoutePanelButtonBottom.onclick = closeRoutePanel;
+recenterRouteButton.onclick = refreshActiveRoute;
 
 loginButton.onclick = login;
 refreshButton.onclick = refreshState;

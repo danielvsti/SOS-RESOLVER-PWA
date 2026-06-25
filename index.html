@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SOS Resolutor</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css" />
   <meta name="theme-color" content="#2563eb" />
 </head>
@@ -121,6 +122,31 @@
     </div>
   </div>
 
+
+
+  <div id="routePanel" class="route-panel" hidden>
+    <div class="route-card">
+      <div class="route-head">
+        <div>
+          <div class="eyebrow">Ruta al procedimiento</div>
+          <h2 id="routeTitle">Ruta</h2>
+          <div id="routeSubtitle" class="muted route-subtitle">-</div>
+        </div>
+        <button id="closeRoutePanelButton" class="icon-button" type="button">✖</button>
+      </div>
+
+      <div id="routeMap" class="route-map"></div>
+
+      <div id="routeStatus" class="route-status">Preparando mapa...</div>
+
+      <div class="route-actions">
+        <button id="recenterRouteButton" class="primary" type="button">Actualizar ruta</button>
+        <button id="closeRoutePanelButtonBottom" class="secondary" type="button">Cerrar mapa</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

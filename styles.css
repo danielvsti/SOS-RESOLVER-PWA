@@ -378,3 +378,108 @@ textarea {
   50% { transform: scale(1.45); opacity: .55; }
   100% { transform: scale(1); opacity: 1; }
 }
+
+
+.route-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 8500;
+  background: rgba(15, 23, 42, .62);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 14px;
+}
+
+.route-card {
+  width: min(920px, 100%);
+  height: calc(100vh - 28px);
+  background: white;
+  border-radius: 26px;
+  padding: 16px;
+  box-shadow: 0 20px 70px rgba(0,0,0,.32);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.route-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.route-subtitle {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.route-map {
+  flex: 1;
+  min-height: 360px;
+  width: 100%;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 2px solid #e5e7eb;
+  background: #e5e7eb;
+}
+
+.route-status {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #f9fafb;
+  color: var(--slate);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.route-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.resolver-route-marker,
+.incident-route-marker {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 22px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+
+.resolver-route-marker {
+  background: #2563eb;
+}
+
+.incident-route-marker {
+  background: #dc2626;
+  animation: routeIncidentPulse 1.2s infinite;
+}
+
+@keyframes routeIncidentPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220,38,38,.7); }
+  70% { transform: scale(1.06); box-shadow: 0 0 0 18px rgba(220,38,38,0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+}
+
+@media (max-width: 640px) {
+  .route-panel { padding: 8px; }
+  .route-card {
+    height: calc(100vh - 16px);
+    border-radius: 22px;
+    padding: 12px;
+  }
+  .route-map { min-height: 300px; }
+  .route-actions { grid-template-columns: 1fr; }
+}
