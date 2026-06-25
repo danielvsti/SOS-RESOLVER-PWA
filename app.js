@@ -522,6 +522,16 @@ async function uploadFieldVideo() {
   }
 }
 
+
+function callNeighbor(phone) {
+  if (!phone) {
+    alert("Este ticket no tiene teléfono de vecino registrado.");
+    return;
+  }
+
+  window.location.href = `tel:${phone}`;
+}
+
 function renderTickets(tickets) {
   ticketsList.innerHTML = "";
   emptyState.hidden = tickets.length > 0;
@@ -581,6 +591,11 @@ function renderTickets(tickets) {
     }
 
     if (mine && !["RESOLVED", "CLOSED", "CANCELLED"].includes(ticket.state)) {
+      if (ticket.citizen_phone) {
+        addActionTitle(actions, "Contacto con vecino");
+        addButton(actions, "📞 Llamar vecino", "field-action-button", () => callNeighbor(ticket.citizen_phone));
+      }
+
       addActionTitle(actions, "Bitácora de terreno");
       addButton(actions, "📝 Reporte situación", "field-action-button", () => openFieldPanel(ticket.id, "text"));
       addButton(actions, "🎙️ Audio terreno", "field-action-button", () => openFieldPanel(ticket.id, "audio"));
