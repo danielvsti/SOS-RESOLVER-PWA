@@ -115,3 +115,14 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
   .modal { padding:10px; }
   .modal-card { margin:20px auto; }
 }
+
+
+/* v9 - configuración operacional, sin URL técnica visible */
+.settings-card { max-width: 860px; }
+.settings-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; margin-top:16px; }
+.settings-section { border:1px solid var(--line); background:#f8fafc; border-radius:18px; padding:14px; }
+.settings-section h3 { margin:0 0 10px; color:#0f172a; }
+.settings-section p { margin:7px 0; }
+.setting-row { display:flex; gap:10px; align-items:center; margin:9px 0; font-weight:800; color:#334155; }
+.settings-section select { width:100%; border:1px solid var(--line); border-radius:12px; padding:11px; font-weight:800; background:#fff; }
+@media (max-width: 760px) { .settings-grid { grid-template-columns:1fr; } }

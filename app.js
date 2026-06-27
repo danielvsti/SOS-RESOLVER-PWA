@@ -1,4 +1,4 @@
-const API = (localStorage.getItem("resolver_api_url") || "https://sos.vsti.cl").replace(/\/$/, "");
+const API = "https://sos.vsti.cl";
 const GPS_TIMEOUT_MS = 9000;
 const POLL_MS = 10000;
 const MAX_GPS_ACCURACY_METERS = Number(localStorage.getItem("resolver_max_gps_accuracy_meters") || 150);
@@ -748,6 +748,53 @@ async function loadState() {
   }
 }
 
+
+
+const SETTINGS_KEYS = {
+  sound: "resolver_setting_sound",
+  vibrate: "resolver_setting_vibrate",
+  navigation: "resolver_setting_navigation",
+  autoRoute: "resolver_setting_auto_route"
+};
+
+function getResolverSetting(key, fallback) {
+  const value = localStorage.getItem(key);
+  if (value == null) return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}
+
+function setResolverSetting(key, value) {
+  localStorage.setItem(key, String(value));
+}
+
+function openSettingsPanel() {
+  const panel = $("settingsPanel");
+  if (!panel) return;
+  $("settingsStatus").textContent = STATUS_LABELS[currentStatus] || currentStatus || "—";
+  $("settingsCenter").textContent = user?.control_center_name || user?.control_center_code || "—";
+  $("settingsUser").textContent = user?.full_name || "—";
+  $("settingsGpsAccuracy").textContent = currentPosition?.coords?.accuracy ? `${Math.round(currentPosition.coords.accuracy)} m` : "Sin lectura reciente";
+  $("settingsGpsUpdated").textContent = currentPosition ? new Date(currentPosition.timestamp || Date.now()).toLocaleString("es-CL") : "—";
+  $("settingsSound").checked = !!getResolverSetting(SETTINGS_KEYS.sound, true);
+  $("settingsVibrate").checked = !!getResolverSetting(SETTINGS_KEYS.vibrate, true);
+  $("settingsNavigationApp").value = getResolverSetting(SETTINGS_KEYS.navigation, "google");
+  $("settingsAutoRoute").checked = !!getResolverSetting(SETTINGS_KEYS.autoRoute, false);
+  panel.classList.remove("hidden");
+}
+
+function closeSettingsPanel() {
+  $("settingsPanel")?.classList.add("hidden");
+}
+
+function saveSettingsFromPanel() {
+  setResolverSetting(SETTINGS_KEYS.sound, $("settingsSound")?.checked ?? true);
+  setResolverSetting(SETTINGS_KEYS.vibrate, $("settingsVibrate")?.checked ?? true);
+  setResolverSetting(SETTINGS_KEYS.navigation, $("settingsNavigationApp")?.value || "google");
+  setResolverSetting(SETTINGS_KEYS.autoRoute, $("settingsAutoRoute")?.checked ?? false);
+}
+
 async function login() {
   const phone = $("phoneInput").value.trim();
   $("loginMsg").textContent = "";
@@ -809,12 +856,18 @@ function init() {
     renderTickets();
   }));
 
-  $("btnSettings").addEventListener("click", () => {
-    const newApi = prompt("URL API", API);
-    if (newApi && newApi.replace(/\/$/, "") !== API) {
-      localStorage.setItem("resolver_api_url", newApi.replace(/\/$/, ""));
-      location.reload();
-    }
+  $("btnSettings").addEventListener("click", openSettingsPanel);
+  $("btnCloseSettings")?.addEventListener("click", closeSettingsPanel);
+  $("settingsPanel")?.addEventListener("click", (event) => {
+    if (event.target === $("settingsPanel")) closeSettingsPanel();
+  });
+  ["settingsSound", "settingsVibrate", "settingsNavigationApp", "settingsAutoRoute"].forEach((id) => {
+    $(id)?.addEventListener("change", saveSettingsFromPanel);
+  });
+  $("settingsUpdateGps")?.addEventListener("click", () => {
+    updateGps(currentStatus === "OFFLINE" ? "AVAILABLE" : currentStatus)
+      .then(() => { toast("GPS actualizado"); openSettingsPanel(); })
+      .catch((err) => toast(err.message));
   });
 
   if (user) {

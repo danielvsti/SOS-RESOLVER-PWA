@@ -134,6 +134,63 @@
     </div>
   </div>
 
+
+
+  <div id="settingsPanel" class="modal hidden">
+    <div class="modal-card settings-card">
+      <button id="btnCloseSettings" class="modal-close" type="button">×</button>
+      <div>
+        <span class="eyebrow">Configuración</span>
+        <h2>Preferencias del resolutor</h2>
+        <p class="muted">Opciones operativas de terreno. La conexión al servidor está administrada por VS&TI y la central municipal.</p>
+      </div>
+
+      <div class="settings-grid">
+        <section class="settings-section">
+          <h3>Mi turno</h3>
+          <p><strong>Estado actual:</strong> <span id="settingsStatus">—</span></p>
+          <p><strong>Centro:</strong> <span id="settingsCenter">—</span></p>
+          <p><strong>Usuario:</strong> <span id="settingsUser">—</span></p>
+        </section>
+
+        <section class="settings-section">
+          <h3>Ubicación y GPS</h3>
+          <p><strong>Precisión actual:</strong> <span id="settingsGpsAccuracy">—</span></p>
+          <p><strong>Última actualización:</strong> <span id="settingsGpsUpdated">—</span></p>
+          <button id="settingsUpdateGps" class="secondary small" type="button">Actualizar GPS ahora</button>
+        </section>
+
+        <section class="settings-section">
+          <h3>Notificaciones</h3>
+          <label class="setting-row"><input id="settingsSound" type="checkbox"> Sonido para nuevo caso</label>
+          <label class="setting-row"><input id="settingsVibrate" type="checkbox"> Vibración para nuevo caso</label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Navegación</h3>
+          <label for="settingsNavigationApp">App preferida</label>
+          <select id="settingsNavigationApp">
+            <option value="google">Google Maps</option>
+            <option value="apple">Apple Maps</option>
+            <option value="waze">Waze</option>
+          </select>
+          <label class="setting-row"><input id="settingsAutoRoute" type="checkbox"> Mostrar ruta al aceptar un caso</label>
+        </section>
+
+        <section class="settings-section">
+          <h3>Evidencia</h3>
+          <p class="muted">La cámara y el micrófono se solicitan solo al grabar evidencia. Puedes revisar estos permisos en Ajustes del teléfono.</p>
+        </section>
+
+        <section class="settings-section">
+          <h3>Diagnóstico</h3>
+          <p><strong>Servidor:</strong> conectado a producción</p>
+          <p><strong>Versión:</strong> Resolutor v9</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div id="recordingBanner" class="recording-banner hidden">
     <span class="rec-dot"></span>
     <span>Grabando audio</span>
