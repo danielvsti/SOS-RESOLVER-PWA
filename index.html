@@ -1,152 +1,89 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SOS Resolutor</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Alerta Comunal Resolutor</title>
+  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
-  <meta name="theme-color" content="#2563eb" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div id="appShell" class="app-shell">
     <header class="topbar">
-      <div>
-        <div class="eyebrow">Sistema SOS Municipal</div>
-        <h1>Resolutor</h1>
+      <div class="brand">
+        <img src="logo.svg" alt="Alerta Comunal" />
+        <div>
+          <strong>Alerta Comunal</strong>
+          <span>Resolutor</span>
+        </div>
       </div>
-      <div id="connectionPill" class="pill offline">offline</div>
+      <button id="btnSettings" class="ghost hidden" type="button">⚙️</button>
     </header>
 
-    <section id="loginView" class="card login-card">
-      <img src="logo.png" class="logo" alt="VS&TI" onerror="this.style.display='none'" />
-      <h2>Ingreso resolutor</h2>
-      <p class="muted">Ingresa con el teléfono registrado en la plataforma.</p>
-
-      <label>Teléfono</label>
-      <input id="phoneInput" type="tel" placeholder="+569XXXXXXXX" autocomplete="tel" />
-
-      <button id="loginButton" class="primary full">Entrar</button>
-      <div id="loginError" class="error"></div>
-    </section>
-
-    <main id="appView" hidden>
-      <section class="card profile-card">
-        <div class="profile-row">
-          <div class="avatar">👮</div>
-          <div>
-            <h2 id="resolverName">Resolutor</h2>
-            <div class="muted" id="resolverMeta">-</div>
-          </div>
-        </div>
-
-        <div class="status-grid">
-          <button id="availableButton" class="status-btn available">Disponible</button>
-          <button id="busyButton" class="status-btn busy">Ocupado / pausa</button>
-        </div>
-
-        <div class="info-grid">
-          <div>
-            <span>Estado</span>
-            <strong id="resolverStatus">-</strong>
-          </div>
-          <div>
-            <span>GPS</span>
-            <strong id="gpsStatus">pendiente</strong>
-          </div>
-          <div>
-            <span>Precisión</span>
-            <strong id="accuracyStatus">-</strong>
-          </div>
-          <div>
-            <span>Casos</span>
-            <strong id="ticketCount">0</strong>
-          </div>
-        </div>
-
-        <div class="button-row">
-          <button id="refreshButton" class="secondary">Actualizar</button>
-          <button id="logoutButton" class="ghost">Salir</button>
-        </div>
+    <main>
+      <section id="loginView" class="card login-card">
+        <h1>Ingreso Resolutor</h1>
+        <p>Ingresa con el teléfono registrado por la central municipal.</p>
+        <label>Teléfono</label>
+        <input id="phoneInput" type="tel" placeholder="+569XXXXXXXX" autocomplete="tel" />
+        <button id="btnLogin" class="primary" type="button">Ingresar</button>
+        <p id="loginMsg" class="msg"></p>
       </section>
 
-      <section class="section-head">
-        <h2>Casos asignados / disponibles</h2>
-        <span id="lastUpdate">-</span>
-      </section>
+      <section id="mainView" class="hidden">
+        <section class="status-card">
+          <div>
+            <span class="eyebrow">Resolutor</span>
+            <h2 id="resolverName">—</h2>
+            <p id="resolverCenter">—</p>
+          </div>
+          <div id="statusPill" class="status-pill offline">OFFLINE</div>
+        </section>
 
-      <section id="ticketsList" class="tickets-list"></section>
-      <section id="emptyState" class="card empty" hidden>
-        <div class="big-icon">✅</div>
-        <h2>Sin casos pendientes</h2>
-        <p class="muted">Mantente disponible. La central puede asignarte una emergencia.</p>
+        <section class="controls-grid">
+          <button id="btnAvailable" class="control available" type="button">Disponible</button>
+          <button id="btnBusy" class="control busy" type="button">Ocupado / Pausa</button>
+          <button id="btnOffline" class="control offline" type="button">Salir de turno</button>
+        </section>
+
+        <section id="reconcileBox" class="notice hidden">
+          <strong>Estado corregido</strong>
+          <p>El sistema detectó que estabas marcado como ocupado/en sitio sin caso activo. Se sincronizó tu estado.</p>
+        </section>
+
+        <section class="card compact">
+          <div class="row between">
+            <div>
+              <span class="eyebrow">Ubicación</span>
+              <p id="gpsText">Sin ubicación reportada</p>
+            </div>
+            <button id="btnUpdateGps" class="secondary small" type="button">Actualizar GPS</button>
+          </div>
+        </section>
+
+        <section class="tabs">
+          <button class="tab active" data-tab="assigned" type="button">Mis casos <span id="assignedCount">0</span></button>
+          <button class="tab" data-tab="available" type="button">Disponibles <span id="availableCount">0</span></button>
+        </section>
+
+        <section id="ticketsList" class="tickets-list"></section>
       </section>
     </main>
   </div>
 
-
-  <div id="recordingBanner" class="recording-banner" hidden>
-    <span class="rec-dot"></span>
-    <span>Grabando audio</span>
-    <span id="recordingTimer">00:00</span>
-  </div>
-
-  <div id="fieldPanel" class="field-panel" hidden>
-    <div class="field-card">
-      <div class="field-head">
-        <div>
-          <div class="eyebrow">Bitácora terreno</div>
-          <h2 id="fieldPanelTitle">Registrar situación</h2>
-        </div>
-        <button id="closeFieldPanelButton" class="icon-button" type="button">✖</button>
-      </div>
-
-      <div id="fieldTextAreaWrap">
-        <p class="muted">Describe lo que ves en terreno. Esto queda asociado al ticket y visible para la central.</p>
-        <textarea id="fieldTextArea" placeholder="Ej: Llegué al lugar. Hay humo visible desde el segundo piso..."></textarea>
-        <button id="sendFieldTextButton" class="primary full" type="button">Enviar reporte de situación</button>
-      </div>
-
-      <div id="fieldAudioWrap" hidden>
-        <p class="muted">Graba un audio breve para complementar el caso. Máximo 30 segundos.</p>
-        <button id="startFieldAudioButton" class="danger full" type="button">🎙️ Iniciar grabación</button>
-        <div id="fieldAudioStatus" class="muted small-status">Listo para grabar.</div>
-      </div>
-
-      <div id="fieldVideoWrap" hidden>
-        <p class="muted">Graba o sube un video corto como evidencia del procedimiento.</p>
-        <button id="pickFieldVideoButton" class="primary full" type="button">📹 Grabar / subir video</button>
-        <input id="fieldVideoInput" type="file" accept="video/*" capture="environment" hidden />
-        <div id="fieldVideoStatus" class="muted small-status">Videos de hasta 25 MB para la demo.</div>
-      </div>
+  <div id="ticketModal" class="modal hidden">
+    <div class="modal-card">
+      <button id="btnCloseModal" class="modal-close" type="button">×</button>
+      <div id="modalContent"></div>
+      <div id="ticketMap" class="ticket-map hidden"></div>
     </div>
   </div>
 
+  <div id="toast" class="toast hidden"></div>
 
-
-  <div id="routePanel" class="route-panel" hidden>
-    <div class="route-card">
-      <div class="route-head">
-        <div>
-          <div class="eyebrow">Ruta al procedimiento</div>
-          <h2 id="routeTitle">Ruta</h2>
-          <div id="routeSubtitle" class="muted route-subtitle">-</div>
-        </div>
-        <button id="closeRoutePanelButton" class="icon-button" type="button">✖</button>
-      </div>
-
-      <div id="routeMap" class="route-map"></div>
-
-      <div id="routeStatus" class="route-status">Preparando mapa...</div>
-
-      <div class="route-actions">
-        <button id="recenterRouteButton" class="primary" type="button">Actualizar ruta</button>
-        <button id="closeRoutePanelButtonBottom" class="secondary" type="button">Cerrar mapa</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
