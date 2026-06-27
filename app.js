@@ -1,6 +1,7 @@
 const API = localStorage.getItem("resolver_api_url") || "https://sos.vsti.cl";
 const GPS_TIMEOUT_MS = 9000;
 const POLL_MS = 10000;
+const MAX_GPS_ACCURACY_METERS = Number(localStorage.getItem("resolver_max_gps_accuracy_meters") || 150);
 
 const $ = (id) => document.getElementById(id);
 let user = JSON.parse(localStorage.getItem("resolver_user") || "null");
@@ -61,10 +62,29 @@ function getLocation() {
   });
 }
 
+
+
+function getGpsSource() {
+  const ua = navigator.userAgent || "";
+  if (window.Capacitor?.isNativePlatform?.()) return `capacitor-${window.Capacitor.getPlatform?.() || "native"}`;
+  if (/iPhone|iPad|iPod/i.test(ua)) return "web-ios";
+  if (/Android/i.test(ua)) return "web-android";
+  if (/Macintosh|Windows|Linux/i.test(ua)) return "web-desktop";
+  return "web";
+}
+
+function validatePositionQuality(pos) {
+  const accuracy = Number(pos?.coords?.accuracy);
+  if (Number.isFinite(accuracy) && accuracy > MAX_GPS_ACCURACY_METERS) {
+    throw new Error(`GPS impreciso (${Math.round(accuracy)} m). Acércate a una ventana o prueba desde el teléfono. No se actualizó tu posición.`);
+  }
+}
+
 async function updateGps(status = currentStatus || "AVAILABLE") {
   if (!user) return;
   try {
     const pos = await getLocation();
+    validatePositionQuality(pos);
     currentPosition = pos;
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
@@ -76,11 +96,12 @@ async function updateGps(status = currentStatus || "AVAILABLE") {
         latitude: lat,
         longitude: lon,
         accuracy,
-        status
+        status,
+        source: getGpsSource()
       })
     });
     currentStatus = resp.effective_status || status;
-    $("gpsText").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} · precisión ${Math.round(accuracy)} m`;
+    $("gpsText").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} · precisión ${Math.round(accuracy)} m · ${getGpsSource()}`;
     updateStatusPill(currentStatus);
     return resp;
   } catch (e) {
@@ -100,12 +121,19 @@ async function setStatus(status) {
   try {
     currentStatus = status;
     updateStatusPill(status);
-    await updateGps(status);
+
     if (status === "OFFLINE") {
+      await api(`/resolvers/${user.id}/status/offline`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      $("gpsText").textContent = "Fuera de turno. No se actualiza ubicación.";
       toast("Saliste de turno");
     } else {
+      await updateGps(status);
       toast(`Estado: ${STATUS_LABELS[status] || status}`);
     }
+
     await loadState();
   } catch (e) {
     toast(e.message);
