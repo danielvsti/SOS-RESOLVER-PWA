@@ -25,6 +25,8 @@ let audioStream = null;
 let recordingTimeout = null;
 let recordingTimerInterval = null;
 let recordingStartedAt = null;
+let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
+let lastNotificationAt = 0;
 
 const STATUS_LABELS = {
   AVAILABLE: "Disponible",
@@ -215,12 +217,47 @@ function stateLabel(state) {
 
 function typeIcon(type) {
   const s = String(type || "").toLowerCase();
-  if (s.includes("vif")) return "🟣";
-  if (s.includes("medical") || s.includes("méd") || s.includes("med")) return "🚑";
+  if (s.includes("vif")) return "🤫";
+  if (s.includes("medical") || s.includes("méd") || s.includes("med")) return "🩺";
   if (s.includes("fire") || s.includes("incend")) return "🔥";
-  if (s.includes("security") || s.includes("seg")) return "🚨";
-  if (s.includes("accident") || s.includes("accidente")) return "🚧";
+  if (s.includes("security") || s.includes("seg")) return "🛡️";
+  if (s.includes("fall") || s.includes("caid") || s.includes("accident") || s.includes("accidente")) return "⚕️";
+  if (s.includes("risk") || s.includes("riesgo")) return "⚠️";
   return "🆘";
+}
+
+function typeLabel(type) {
+  const s = String(type || "").toLowerCase();
+  if (s.includes("vif")) return "VIF";
+  if (s.includes("medical") || s.includes("méd") || s.includes("med")) return "Médica";
+  if (s.includes("fire") || s.includes("incend")) return "Incendio";
+  if (s.includes("security") || s.includes("seg")) return "Seguridad";
+  if (s.includes("fall") || s.includes("caid")) return "Caída";
+  if (s.includes("accident") || s.includes("accidente")) return "Accidente";
+  if (s.includes("risk") || s.includes("riesgo")) return "Riesgo";
+  if (s.includes("other") || s.includes("otro")) return "Otro";
+  return "SOS";
+}
+
+function sectorFromCoords(latitude, longitude) {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "Sector no informado";
+  // Estimación aproximada para demo. La versión oficial debe usar polígonos de barrios/unidades vecinales.
+  if (lat > -32.981 && lon < -71.532) return "Reñaca Bajo / Jardín del Mar";
+  if (lat > -32.982 && lon >= -71.532) return "Reñaca Alto";
+  if (lat > -32.999 && lon > -71.510) return "Gómez Carreño / Glorias Navales";
+  if (lat > -33.007 && lon > -71.522) return "Achupallas / Santa Julia";
+  if (lat > -33.009 && lon <= -71.522) return "Santa Inés / Población Vergara";
+  if (lat > -33.024 && lon < -71.545) return "Plan Viña / Libertad";
+  if (lat > -33.026 && lon >= -71.545) return "Miraflores / Chorrillos";
+  if (lat <= -33.035 && lon < -71.545) return "Recreo / Agua Santa";
+  if (lat <= -33.035 && lon >= -71.545) return "Forestal / Nueva Aurora";
+  return "Viña del Mar";
+}
+
+function ticketIncidentSector(ticket) {
+  return ticket?.incident_sector || ticket?.sector_estimado || ticket?.sector_aproximado || sectorFromCoords(ticket?.latitude, ticket?.longitude);
 }
 
 function renderTickets() {
@@ -251,7 +288,8 @@ function ticketCard(t) {
   const canUpdateField = assigned && !TERMINAL_STATES.includes(t.state);
   const hasCoords = Number.isFinite(Number(t.latitude)) && Number.isFinite(Number(t.longitude));
   const title = `${typeIcon(t.alert_type)} ${t.title || t.alert_type || "Emergencia"}`;
-  const meta = `${t.citizen_name || "Vecino"} · ${ticketAge(t)} · ${stateLabel(t.state)}`;
+  const sector = ticketIncidentSector(t);
+  const meta = `${t.citizen_name || "Vecino"} · ${sector} · ${ticketAge(t)} · ${stateLabel(t.state)}`;
   const idShort = String(t.id || "").slice(0, 8).toUpperCase();
 
   let actions = "";
@@ -297,6 +335,8 @@ function ticketCard(t) {
       </div>
       <div class="ticket-body">
         <div><strong>Prioridad:</strong> ${escapeHtml(t.priority || "—")}</div>
+        <div><strong>Tipo:</strong> ${escapeHtml(typeLabel(t.alert_type))}</div>
+        <div><strong>Sector del evento:</strong> ${escapeHtml(sector)}</div>
         <div><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "—")}</div>
         <div><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "—")}</div>
         <div><strong>Asignación:</strong> ${assigned ? "Asignado a mí" : available ? "Disponible" : escapeHtml(t.resolver_name || "Otro resolutor")}</div>
@@ -347,8 +387,9 @@ function showTicketDetail(t) {
   const lat = Number(t.latitude);
   const lon = Number(t.longitude);
   $("modalContent").innerHTML = `
-    <h2>${escapeHtml(t.title || "Emergencia")}</h2>
-    <p><strong>Tipo:</strong> ${escapeHtml(t.alert_type || "SOS")}</p>
+    <h2>${escapeHtml(typeIcon(t.alert_type) + " " + (t.title || "Emergencia"))}</h2>
+    <p><strong>Tipo:</strong> ${escapeHtml(typeLabel(t.alert_type))}</p>
+    <p><strong>Sector del evento:</strong> ${escapeHtml(ticketIncidentSector(t))}</p>
     <p><strong>Estado:</strong> ${escapeHtml(stateLabel(t.state))}</p>
     <p><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "No informado")}</p>
     <p><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "No informado")}</p>
@@ -695,7 +736,7 @@ async function renderRoute(ticket) {
 function openRoutePanel(ticket) {
   activeRouteTicket = ticket;
   $("routeTitle").textContent = ticket.title || ticket.alert_type || "Emergencia";
-  $("routeSubtitle").textContent = `${ticket.citizen_name || "Vecino"} · ${ticket.latitude}, ${ticket.longitude}`;
+  $("routeSubtitle").textContent = `${typeLabel(ticket.alert_type)} · ${ticketIncidentSector(ticket)} · ${ticket.citizen_name || "Vecino"}`;
   $("routePanel").classList.remove("hidden");
   renderRoute(ticket);
 }
@@ -722,6 +763,110 @@ function openExternalNavigation(kind) {
   window.open(url, "_blank");
 }
 
+
+function saveKnownAssignedTicketIds() {
+  localStorage.setItem("resolver_known_assigned_ticket_ids", JSON.stringify([...knownAssignedTicketIds].slice(-80)));
+}
+
+function notificationTitle(ticket) {
+  return `${typeIcon(ticket.alert_type)} Nuevo caso asignado`;
+}
+
+function notificationBody(ticket) {
+  return `${typeLabel(ticket.alert_type)} en ${ticketIncidentSector(ticket)} · ${ticket.title || "Emergencia municipal"}`;
+}
+
+function playResolverAlertSound() {
+  if (!getResolverSetting(SETTINGS_KEYS.sound, true)) return;
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.04);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.25);
+    gain.connect(ctx.destination);
+    [0, 0.22, 0.44, 0.66].forEach((offset, idx) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(idx % 2 ? 640 : 880, ctx.currentTime + offset);
+      osc.connect(gain);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.16);
+    });
+    setTimeout(() => ctx.close().catch(() => null), 1600);
+  } catch (err) {
+    console.warn("No se pudo reproducir sonido", err);
+  }
+}
+
+function vibrateResolverAlert() {
+  if (!getResolverSetting(SETTINGS_KEYS.vibrate, true)) return;
+  try { navigator.vibrate?.([450, 160, 450, 160, 650]); } catch (_) {}
+}
+
+async function ensureBrowserNotificationPermission() {
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") return true;
+  if (Notification.permission === "denied") return false;
+  try {
+    const permission = await Notification.requestPermission();
+    return permission === "granted";
+  } catch (_) { return false; }
+}
+
+async function showBrowserNotification(ticket) {
+  if (!getResolverSetting(SETTINGS_KEYS.browserNotification, true)) return;
+  const ok = await ensureBrowserNotificationPermission();
+  if (!ok) return;
+  try {
+    new Notification(notificationTitle(ticket), {
+      body: notificationBody(ticket),
+      tag: `ticket-${ticket.id}`,
+      requireInteraction: true
+    });
+  } catch (err) {
+    console.warn("No se pudo mostrar notificación", err);
+  }
+}
+
+function isTicketAssignedOrPendingForMe(ticket) {
+  return isAssignedToMe(ticket) || isPendingForMe(ticket);
+}
+
+async function notifyNewAssignedTickets(tickets) {
+  if (!Array.isArray(tickets) || !user) return;
+  const assigned = tickets.filter(t => isTicketAssignedOrPendingForMe(t) && !TERMINAL_STATES.includes(t.state));
+  const newOnes = assigned.filter(t => t.id && !knownAssignedTicketIds.has(String(t.id)));
+  assigned.forEach(t => t.id && knownAssignedTicketIds.add(String(t.id)));
+  saveKnownAssignedTicketIds();
+  if (!newOnes.length) return;
+
+  const now = Date.now();
+  if (now - lastNotificationAt < 1200) return;
+  lastNotificationAt = now;
+  const ticket = newOnes[0];
+  playResolverAlertSound();
+  vibrateResolverAlert();
+  showBrowserNotification(ticket);
+  toast(`${notificationTitle(ticket)} · ${notificationBody(ticket)}`);
+}
+
+function testResolverNotification() {
+  const ticket = {
+    id: "TEST",
+    alert_type: "FIRE",
+    title: "Prueba de notificación",
+    latitude: -33.019,
+    longitude: -71.548
+  };
+  playResolverAlertSound();
+  vibrateResolverAlert();
+  showBrowserNotification(ticket);
+  toast("Prueba de notificación ejecutada");
+}
+
 async function loadState() {
   if (!user) return;
   try {
@@ -742,6 +887,7 @@ async function loadState() {
       $("reconcileBox").classList.remove("hidden");
       setTimeout(() => $("reconcileBox").classList.add("hidden"), 5500);
     }
+    await notifyNewAssignedTickets(data.tickets || []);
     renderTickets();
   } catch (err) {
     toast(err.message);
@@ -753,6 +899,7 @@ async function loadState() {
 const SETTINGS_KEYS = {
   sound: "resolver_setting_sound",
   vibrate: "resolver_setting_vibrate",
+  browserNotification: "resolver_setting_browser_notification",
   navigation: "resolver_setting_navigation",
   autoRoute: "resolver_setting_auto_route"
 };
@@ -779,6 +926,7 @@ function openSettingsPanel() {
   $("settingsGpsUpdated").textContent = currentPosition ? new Date(currentPosition.timestamp || Date.now()).toLocaleString("es-CL") : "—";
   $("settingsSound").checked = !!getResolverSetting(SETTINGS_KEYS.sound, true);
   $("settingsVibrate").checked = !!getResolverSetting(SETTINGS_KEYS.vibrate, true);
+  if ($("settingsBrowserNotification")) $("settingsBrowserNotification").checked = !!getResolverSetting(SETTINGS_KEYS.browserNotification, true);
   $("settingsNavigationApp").value = getResolverSetting(SETTINGS_KEYS.navigation, "google");
   $("settingsAutoRoute").checked = !!getResolverSetting(SETTINGS_KEYS.autoRoute, false);
   panel.classList.remove("hidden");
@@ -791,6 +939,7 @@ function closeSettingsPanel() {
 function saveSettingsFromPanel() {
   setResolverSetting(SETTINGS_KEYS.sound, $("settingsSound")?.checked ?? true);
   setResolverSetting(SETTINGS_KEYS.vibrate, $("settingsVibrate")?.checked ?? true);
+  setResolverSetting(SETTINGS_KEYS.browserNotification, $("settingsBrowserNotification")?.checked ?? true);
   setResolverSetting(SETTINGS_KEYS.navigation, $("settingsNavigationApp")?.value || "google");
   setResolverSetting(SETTINGS_KEYS.autoRoute, $("settingsAutoRoute")?.checked ?? false);
 }
@@ -861,7 +1010,7 @@ function init() {
   $("settingsPanel")?.addEventListener("click", (event) => {
     if (event.target === $("settingsPanel")) closeSettingsPanel();
   });
-  ["settingsSound", "settingsVibrate", "settingsNavigationApp", "settingsAutoRoute"].forEach((id) => {
+  ["settingsSound", "settingsVibrate", "settingsBrowserNotification", "settingsNavigationApp", "settingsAutoRoute"].forEach((id) => {
     $(id)?.addEventListener("change", saveSettingsFromPanel);
   });
   $("settingsUpdateGps")?.addEventListener("click", () => {
@@ -869,6 +1018,7 @@ function init() {
       .then(() => { toast("GPS actualizado"); openSettingsPanel(); })
       .catch((err) => toast(err.message));
   });
+  $("settingsTestNotification")?.addEventListener("click", testResolverNotification);
 
   if (user) {
     showMain();
