@@ -26,7 +26,7 @@
       <section id="loginView" class="card login-card">
         <h1>Ingreso Resolutor</h1>
         <p>Ingresa con el teléfono registrado por la central municipal.</p>
-        <label>Teléfono</label>
+        <label for="phoneInput">Teléfono</label>
         <input id="phoneInput" type="tel" placeholder="+569XXXXXXXX" autocomplete="tel" />
         <button id="btnLogin" class="primary" type="button">Ingresar</button>
         <p id="loginMsg" class="msg"></p>
@@ -39,7 +39,7 @@
             <h2 id="resolverName">—</h2>
             <p id="resolverCenter">—</p>
           </div>
-          <div id="statusPill" class="status-pill offline">OFFLINE</div>
+          <div id="statusPill" class="status-pill offline">Fuera de turno</div>
         </section>
 
         <section class="controls-grid">
@@ -79,6 +79,65 @@
       <div id="modalContent"></div>
       <div id="ticketMap" class="ticket-map hidden"></div>
     </div>
+  </div>
+
+  <div id="fieldPanel" class="modal hidden">
+    <div class="modal-card field-card">
+      <button id="btnCloseFieldPanel" class="modal-close" type="button">×</button>
+      <div>
+        <span class="eyebrow">Bitácora de terreno</span>
+        <h2 id="fieldTitle">Registrar antecedente</h2>
+        <p id="fieldSubtitle" class="muted">Este antecedente quedará asociado al ticket y visible para la central.</p>
+      </div>
+
+      <div id="fieldTextWrap" class="field-mode">
+        <label for="fieldTextArea">Reporte escrito</label>
+        <textarea id="fieldTextArea" placeholder="Ej: Llegué al lugar. Se entrevista a vecino. Se solicita apoyo..."></textarea>
+        <button id="btnSendFieldText" class="primary" type="button">Enviar antecedente</button>
+      </div>
+
+      <div id="fieldAudioWrap" class="field-mode hidden">
+        <p class="muted">Graba un audio breve para complementar el caso. Máximo 30 segundos.</p>
+        <button id="btnStartAudio" class="danger" type="button">🎙️ Iniciar grabación</button>
+        <p id="fieldAudioStatus" class="muted strong">Listo para grabar.</p>
+      </div>
+
+      <div id="fieldVideoWrap" class="field-mode hidden">
+        <p class="muted">Graba o sube un video corto como evidencia del procedimiento.</p>
+        <button id="btnPickVideo" class="primary" type="button">📹 Grabar / subir video</button>
+        <input id="fieldVideoInput" type="file" accept="video/*" capture="environment" hidden />
+        <p id="fieldVideoStatus" class="muted strong">Videos de hasta 25 MB para la demo.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="routePanel" class="route-panel hidden">
+    <div class="route-card">
+      <div class="route-head">
+        <div>
+          <span class="eyebrow">Ruta al procedimiento</span>
+          <h2 id="routeTitle">Ruta</h2>
+          <p id="routeSubtitle" class="muted route-subtitle">—</p>
+        </div>
+        <button id="btnCloseRoute" class="modal-close in-route" type="button">×</button>
+      </div>
+
+      <div id="routeMap" class="route-map"></div>
+      <div id="routeStatus" class="route-status">Preparando mapa...</div>
+
+      <div class="route-actions">
+        <button id="btnRefreshRoute" class="primary" type="button">Actualizar ruta</button>
+        <button id="btnOpenGoogleMaps" class="secondary" type="button">Google Maps</button>
+        <button id="btnOpenAppleMaps" class="secondary" type="button">Apple Maps</button>
+        <button id="btnOpenWaze" class="secondary" type="button">Waze</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="recordingBanner" class="recording-banner hidden">
+    <span class="rec-dot"></span>
+    <span>Grabando audio</span>
+    <span id="recordingTimer">00:00</span>
   </div>
 
   <div id="toast" class="toast hidden"></div>

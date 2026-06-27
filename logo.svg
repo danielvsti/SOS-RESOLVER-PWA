@@ -1,7 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
-  <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#ef4444"/><stop offset="1" stop-color="#f59e0b"/></linearGradient></defs>
-  <rect width="96" height="96" rx="24" fill="#0f172a"/>
-  <path d="M48 15l28 12v20c0 19-11 31-28 38C31 78 20 66 20 47V27l28-12z" fill="url(#g)"/>
-  <circle cx="48" cy="45" r="17" fill="#fff" opacity=".96"/>
-  <path d="M48 28v19l13 8" fill="none" stroke="#0f172a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="28" fill="#0f172a"/>
+  <circle cx="64" cy="64" r="42" fill="#dc2626"/>
+  <path d="M64 24l8 18 19 2-14 13 4 19-17-10-17 10 4-19-14-13 19-2z" fill="#fff"/>
+  <text x="64" y="111" text-anchor="middle" font-size="16" font-family="Arial" font-weight="700" fill="#fff">RES</text>
 </svg>
