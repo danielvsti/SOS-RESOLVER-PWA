@@ -2,6 +2,7 @@ const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
 const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
 const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 10000);
+const GPS_HEARTBEAT_MS = Number(SOS_CONFIG.RESOLVER_GPS_HEARTBEAT_MS || 30000);
 const MAX_GPS_ACCURACY_METERS = Number(SOS_CONFIG.RESOLVER_GPS_MAX_ACCURACY_METERS || 150);
 
 // Limpieza defensiva: este parámetro técnico no debe quedar editable/persistido desde UI.
@@ -16,6 +17,8 @@ let currentPosition = null;
 let activeTab = "assigned";
 let stateCache = null;
 let pollTimer = null;
+let gpsHeartbeatTimer = null;
+let gpsHeartbeatFailures = 0;
 let ticketMap = null;
 let routeMap = null;
 let routeLayer = null;
@@ -146,9 +149,11 @@ async function setStatus(status) {
     if (status === "OFFLINE") {
       await api(`/resolvers/${user.id}/status/offline`, { method: "POST", body: JSON.stringify({}) });
       $("gpsText").textContent = "Fuera de turno. No se actualiza ubicación.";
+      stopGpsHeartbeat();
       toast("Saliste de turno");
     } else {
       await updateGps(status);
+      startGpsHeartbeat();
       toast(`Estado: ${STATUS_LABELS[status] || status}`);
     }
 
@@ -156,6 +161,76 @@ async function setStatus(status) {
   } catch (err) {
     toast(err.message);
   }
+}
+
+function startGpsHeartbeat() {
+  clearInterval(gpsHeartbeatTimer);
+  if (!user || String(currentStatus || "OFFLINE").toUpperCase() === "OFFLINE") return;
+
+  gpsHeartbeatTimer = setInterval(async () => {
+    if (!user || String(currentStatus || "OFFLINE").toUpperCase() === "OFFLINE") return;
+    try {
+      await updateGps(currentStatus);
+      gpsHeartbeatFailures = 0;
+    } catch (err) {
+      gpsHeartbeatFailures += 1;
+      console.warn("resolver gps heartbeat failed", err.message);
+      if (gpsHeartbeatFailures === 1 || gpsHeartbeatFailures % 5 === 0) {
+        $("gpsText").textContent = `No se pudo actualizar GPS automáticamente: ${err.message}`;
+      }
+    }
+  }, GPS_HEARTBEAT_MS);
+}
+
+function stopGpsHeartbeat() {
+  clearInterval(gpsHeartbeatTimer);
+  gpsHeartbeatTimer = null;
+  gpsHeartbeatFailures = 0;
+}
+
+async function logout() {
+  if (!user) return showLogin();
+
+  const ok = confirm("¿Cerrar sesión y cambiar de resolutor? Se marcará este usuario fuera de turno en la central.");
+  if (!ok) return;
+
+  const previousUserId = user.id;
+  try {
+    stopGpsHeartbeat();
+    clearInterval(pollTimer);
+    pollTimer = null;
+    await api(`/resolvers/${previousUserId}/status/offline`, { method: "POST", body: JSON.stringify({ reason: "logout" }) });
+  } catch (err) {
+    console.warn("logout offline failed", err.message);
+  }
+
+  user = null;
+  stateCache = null;
+  currentPosition = null;
+  currentStatus = "OFFLINE";
+  knownAssignedTicketIds = new Set();
+
+  localStorage.removeItem("resolver_user");
+  localStorage.removeItem("resolver_status");
+  localStorage.removeItem("resolver_known_assigned_ticket_ids");
+
+  closeSettingsPanel();
+  closeTicketModal();
+  closeFieldPanel();
+  closeRoutePanel();
+  showLogin();
+  toast("Sesión cerrada. Puedes ingresar con otro resolutor.");
+}
+
+function showLogin() {
+  $("mainView")?.classList.add("hidden");
+  $("loginView")?.classList.remove("hidden");
+  $("btnSettings")?.classList.add("hidden");
+  updateStatusPill("OFFLINE");
+  if ($("phoneInput")) $("phoneInput").value = "";
+  if ($("loginMsg")) $("loginMsg").textContent = "";
+  if ($("ticketsList")) $("ticketsList").innerHTML = "";
+  if ($("gpsText")) $("gpsText").textContent = "Sin ubicación reportada";
 }
 
 async function reconcileStatus() {
@@ -962,6 +1037,7 @@ async function login() {
     localStorage.setItem("resolver_user", JSON.stringify(user));
     showMain();
     await updateGps("AVAILABLE").catch((err) => toast(err.message));
+    startGpsHeartbeat();
     await reconcileStatus();
     await loadState();
     startPolling();
@@ -1023,11 +1099,15 @@ function init() {
       .catch((err) => toast(err.message));
   });
   $("settingsTestNotification")?.addEventListener("click", testResolverNotification);
+  $("settingsLogout")?.addEventListener("click", logout);
 
   if (user) {
     showMain();
     loadState();
-    if (currentStatus !== "OFFLINE") updateGps(currentStatus).catch(() => null);
+    if (currentStatus !== "OFFLINE") {
+      updateGps(currentStatus).catch(() => null);
+      startGpsHeartbeat();
+    }
     startPolling();
   }
 }

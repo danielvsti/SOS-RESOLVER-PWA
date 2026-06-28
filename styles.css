@@ -129,3 +129,9 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .settings-section { overflow:hidden; }
 .settings-section select { width:100%; border:1px solid var(--line); border-radius:12px; padding:11px; font-weight:800; background:#fff; }
 @media (max-width: 760px) { .settings-grid { grid-template-columns:1fr; } }
+
+.settings-actions { margin-top: 12px; }
+.tiny { font-size: 12px; line-height: 1.35; }
+.full { width: 100%; }
+.danger-soft { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
+.danger-soft:hover { background: #ffe4e6; }
