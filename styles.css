@@ -123,6 +123,9 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .settings-section { border:1px solid var(--line); background:#f8fafc; border-radius:18px; padding:14px; }
 .settings-section h3 { margin:0 0 10px; color:#0f172a; }
 .settings-section p { margin:7px 0; }
-.setting-row { display:flex; gap:10px; align-items:center; margin:9px 0; font-weight:800; color:#334155; }
+.setting-row { display:grid; grid-template-columns:34px minmax(0,1fr); gap:12px; align-items:start; margin:12px 0; font-weight:800; color:#334155; width:100%; max-width:100%; line-height:1.25; }
+.setting-row input[type=checkbox] { width:28px; height:28px; min-width:28px; margin:0; padding:0; }
+.setting-row span { min-width:0; white-space:normal; overflow-wrap:anywhere; display:block; }
+.settings-section { overflow:hidden; }
 .settings-section select { width:100%; border:1px solid var(--line); border-radius:12px; padding:11px; font-weight:800; background:#fff; }
 @media (max-width: 760px) { .settings-grid { grid-template-columns:1fr; } }
