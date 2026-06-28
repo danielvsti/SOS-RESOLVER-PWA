@@ -1,7 +1,11 @@
-const API = "https://sos.vsti.cl";
-const GPS_TIMEOUT_MS = 9000;
-const POLL_MS = 10000;
-const MAX_GPS_ACCURACY_METERS = Number(localStorage.getItem("resolver_max_gps_accuracy_meters") || 150);
+const SOS_CONFIG = window.SOS_CONFIG || {};
+const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
+const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
+const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 10000);
+const MAX_GPS_ACCURACY_METERS = Number(SOS_CONFIG.RESOLVER_GPS_MAX_ACCURACY_METERS || 150);
+
+// Limpieza defensiva: este parámetro técnico no debe quedar editable/persistido desde UI.
+localStorage.removeItem("resolver_max_gps_accuracy_meters");
 const TERMINAL_STATES = ["CLOSED", "CANCELLED", "RESOLVED"];
 
 const $ = (id) => document.getElementById(id);
