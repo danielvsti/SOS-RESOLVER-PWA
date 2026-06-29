@@ -84,6 +84,123 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .modal-card { background:#fff; border-radius:24px; padding:18px; max-width:780px; margin:40px auto; position:relative; box-shadow:var(--shadow); }
 .modal-close { position:absolute; right:12px; top:12px; width:40px; height:40px; border-radius:999px; background:#e2e8f0; font-size:24px; padding:0; }
 .ticket-map { height:280px; border-radius:18px; overflow:hidden; margin-top:14px; border:1px solid var(--line); }
+
+.resolver-activity-card {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+}
+
+.resolver-activity-head h3 {
+  margin: 4px 0 3px;
+  color: #0f172a;
+}
+
+.resolver-activity-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.resolver-activity-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.resolver-activity-item {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #dbeafe;
+  background: #fff;
+}
+
+.resolver-activity-item.actor-neighbor {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.resolver-activity-item.actor-resolver {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.resolver-activity-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.resolver-activity-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.resolver-activity-row strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.resolver-activity-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.resolver-activity-role {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.resolver-activity-content p {
+  margin: 6px 0 0;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.resolver-activity-file {
+  color: var(--muted) !important;
+  font-weight: 800;
+}
+
+.resolver-activity-link {
+  display: inline-flex;
+  margin-top: 8px;
+  color: var(--blue);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.resolver-activity-empty,
+.resolver-activity-error {
+  margin: 12px 0 0;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--muted);
+  font-weight: 800;
+}
+
 .detail-actions { margin-top:16px; }
 .field-card { padding-top:54px; }
 .field-mode { margin-top:16px; }

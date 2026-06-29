@@ -76,6 +76,114 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+
+function resolverActivityIcon(type) {
+  switch (type) {
+    case "MESSAGE_TEXT": return "💬";
+    case "MEDIA_AUDIO": return "🎙️";
+    case "MEDIA_VIDEO": return "📹";
+    case "CALL_VOICE": return "☎️";
+    case "CALL_VIDEO": return "🎥";
+    case "CALL_ACCEPTED": return "✅";
+    case "CALL_REJECTED": return "🚫";
+    default: return "📝";
+  }
+}
+
+function formatResolverActivityTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("es-CL", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function normalizeTicketActionForResolver(action) {
+  const metadata = action?.metadata && typeof action.metadata === "object" ? action.metadata : {};
+  const actionType = action?.action_type || "NOTE";
+  const actorRole = action?.actor_role || "—";
+  let title = action?.description || "Antecedente del caso";
+  let body = metadata.message || null;
+  let mediaUrl = metadata.media_url || null;
+  let fileName = metadata.file_name || null;
+
+  if (actorRole === "NEIGHBOR") {
+    if (actionType === "MESSAGE_TEXT") title = "Mensaje enviado por vecino";
+    if (actionType === "MEDIA_AUDIO") title = "Audio enviado por vecino";
+    if (actionType === "MEDIA_VIDEO") title = "Video enviado por vecino";
+  } else if (actorRole === "RESOLVER") {
+    if (actionType === "MESSAGE_TEXT") title = "Antecedente registrado por resolutor";
+    if (actionType === "MEDIA_AUDIO") title = "Audio de terreno del resolutor";
+    if (actionType === "MEDIA_VIDEO") title = "Video de terreno del resolutor";
+  } else if (actorRole === "OPERATOR") {
+    title = action?.description || "Actualización de la central";
+  }
+
+  return {
+    id: action?.id,
+    action_type: actionType,
+    actor_role: actorRole,
+    title,
+    body,
+    media_url: mediaUrl,
+    file_name: fileName,
+    created_at: action?.created_at
+  };
+}
+
+function renderTicketActivityForResolver(actions = []) {
+  const container = $("resolverActivityList");
+  const empty = $("resolverActivityEmpty");
+  if (!container || !empty) return;
+
+  const relevant = (Array.isArray(actions) ? actions : [])
+    .map(normalizeTicketActionForResolver)
+    .filter((item) => ["NEIGHBOR", "OPERATOR", "RESOLVER"].includes(item.actor_role));
+
+  empty.classList.toggle("hidden", relevant.length > 0);
+
+  container.innerHTML = relevant.map((item) => {
+    const link = item.media_url
+      ? `<a class="resolver-activity-link" href="${escapeHtml(item.media_url)}" target="_blank" rel="noopener">Ver evidencia</a>`
+      : "";
+    return `
+      <div class="resolver-activity-item actor-${escapeHtml(String(item.actor_role).toLowerCase())}">
+        <div class="resolver-activity-icon">${resolverActivityIcon(item.action_type)}</div>
+        <div class="resolver-activity-content">
+          <div class="resolver-activity-row">
+            <strong>${escapeHtml(item.title)}</strong>
+            <span>${escapeHtml(formatResolverActivityTime(item.created_at))}</span>
+          </div>
+          <div class="resolver-activity-role">${escapeHtml(item.actor_role)}</div>
+          ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
+          ${item.file_name ? `<p class="resolver-activity-file">${escapeHtml(item.file_name)}</p>` : ""}
+          ${link}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function loadTicketActivityForResolver(ticketId) {
+  const container = $("resolverActivityList");
+  const empty = $("resolverActivityEmpty");
+  if (!container || !empty || !ticketId) return;
+
+  container.innerHTML = `<div class="muted strong">Cargando antecedentes del caso...</div>`;
+  empty.classList.add("hidden");
+
+  try {
+    const data = await api(`/tickets/${ticketId}/actions`);
+    renderTicketActivityForResolver(data.actions || []);
+  } catch (err) {
+    container.innerHTML = `<div class="resolver-activity-error">No se pudieron cargar los antecedentes: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
 function getGpsSource() {
   const ua = navigator.userAgent || "";
   if (window.Capacitor?.isNativePlatform?.()) return `capacitor-${window.Capacitor.getPlatform?.() || "native"}`;
@@ -474,6 +582,15 @@ function showTicketDetail(t) {
     <p><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "No informado")}</p>
     <p><strong>Descripción:</strong> ${escapeHtml(t.description || "Sin descripción")}</p>
     <p><strong>Ubicación:</strong> ${Number.isFinite(lat) ? lat.toFixed(5) : "—"}, ${Number.isFinite(lon) ? lon.toFixed(5) : "—"}</p>
+    <section class="resolver-activity-card">
+      <div class="resolver-activity-head">
+        <span class="eyebrow">Antecedentes del caso</span>
+        <h3>Bitácora y evidencia</h3>
+        <p>Mensajes, audios y videos enviados por el vecino, central y resolutor.</p>
+      </div>
+      <div id="resolverActivityList" class="resolver-activity-list"></div>
+      <p id="resolverActivityEmpty" class="resolver-activity-empty hidden">Aún no hay antecedentes adicionales asociados a este caso.</p>
+    </section>
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
       ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button>` : ""}
@@ -500,6 +617,7 @@ function showTicketDetail(t) {
   }
 
   $("ticketModal").classList.remove("hidden");
+  loadTicketActivityForResolver(t.id);
   setTimeout(() => {
     const routeBtn = $("btnDetailRoute");
     if (routeBtn) routeBtn.onclick = () => { closeTicketModal(); openRoutePanel(t); };
