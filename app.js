@@ -86,6 +86,13 @@ function resolverActivityIcon(type) {
     case "CALL_VIDEO": return "🎥";
     case "CALL_ACCEPTED": return "✅";
     case "CALL_REJECTED": return "🚫";
+    case "VOICE_SESSION_CREATED":
+    case "VOICE_CONNECTED":
+    case "VOICE_ENDED":
+    case "VOICE_FAILED":
+    case "VOICE_NO_ANSWER":
+    case "VOICE_EXPIRED":
+    case "VOICE_RECORDING_AVAILABLE": return "📞";
     default: return "📝";
   }
 }
@@ -508,7 +515,7 @@ function ticketCard(t) {
     actions += `<button class="field-action" data-action="field-text" data-id="${t.id}">📝 Antecedente</button>`;
     actions += `<button class="field-action" data-action="field-audio" data-id="${t.id}">🎙️ Audio</button>`;
     actions += `<button class="field-action" data-action="field-video" data-id="${t.id}">📹 Video</button>`;
-    actions += `<button class="field-action disabled" data-action="secure-call" data-id="${t.id}">📞 Llamada segura</button>`;
+    actions += `<button class="field-action" data-action="secure-call" data-id="${t.id}">📞 Llamar vecino</button>`;
   }
 
   return `
@@ -536,6 +543,21 @@ function findTicket(id) {
   return (stateCache?.tickets || []).find((t) => String(t.id) === String(id));
 }
 
+async function requestSecureCall(ticketId) {
+  if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  try {
+    const data = await api(`/resolver/tickets/${ticketId}/voice/request`, {
+      method: "POST",
+      body: JSON.stringify({ resolver_user_id: user.id })
+    });
+    const waSession = data.voice_session?.wa_center_session_id || data.voice_session?.id || "";
+    toast(waSession ? `Llamada segura solicitada · ${waSession}` : "Llamada segura solicitada");
+    await loadState();
+  } catch (err) {
+    toast(err.message || "No se pudo solicitar llamada segura");
+  }
+}
+
 async function handleTicketAction(action, id) {
   const t = findTicket(id);
   if (!t) return;
@@ -546,7 +568,7 @@ async function handleTicketAction(action, id) {
     if (action === "field-text") return openFieldPanel(t.id, "text");
     if (action === "field-audio") return openFieldPanel(t.id, "audio");
     if (action === "field-video") return openFieldPanel(t.id, "video");
-    if (action === "secure-call") return toast("Llamada segura vía WA-CENTER/WebRTC en preparación.");
+    if (action === "secure-call") return requestSecureCall(t.id);
 
     if (action === "accept") await api(`/tickets/${id}/accept`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id }) });
     if (action === "reject") {
@@ -593,7 +615,7 @@ function showTicketDetail(t) {
     </section>
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
-      ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button>` : ""}
+      ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Llamar vecino</button>` : ""}
     </div>
   `;
 
@@ -627,6 +649,8 @@ function showTicketDetail(t) {
     if (audioBtn) audioBtn.onclick = () => { closeTicketModal(); openFieldPanel(t.id, "audio"); };
     const videoBtn = $("btnDetailVideo");
     if (videoBtn) videoBtn.onclick = () => { closeTicketModal(); openFieldPanel(t.id, "video"); };
+    const callBtn = $("btnDetailCall");
+    if (callBtn) callBtn.onclick = () => { requestSecureCall(t.id); };
   }, 0);
 }
 
