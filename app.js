@@ -33,6 +33,7 @@ let recordingTimeout = null;
 let recordingTimerInterval = null;
 let recordingStartedAt = null;
 let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
+let knownVoiceSessionIds = new Set(JSON.parse(localStorage.getItem("resolver_known_voice_session_ids") || "[]"));
 let lastNotificationAt = 0;
 let resolverVoice = { session: null, ua: null, call: null };
 
@@ -455,6 +456,45 @@ function ticketIncidentSector(ticket) {
   return ticket?.incident_sector || ticket?.sector_estimado || ticket?.sector_aproximado || sectorFromCoords(ticket?.latitude, ticket?.longitude);
 }
 
+
+function activeVoiceSessionForTicket(ticket) {
+  if (!ticket) return null;
+  const session = ticket.voice_session || ticket.pending_voice_session || null;
+  if (session && session.id) return session;
+
+  if (!ticket.voice_session_id && !ticket.wa_center_session_id) return null;
+  const status = String(ticket.voice_status || "CREATED").toUpperCase();
+  if (["FAILED", "ENDED", "EXPIRED", "NO_ANSWER"].includes(status)) return null;
+
+  return {
+    id: ticket.voice_session_id,
+    wa_center_session_id: ticket.wa_center_session_id,
+    status,
+    requested_by: ticket.voice_requested_by,
+    target_type: ticket.voice_target_type,
+    created_at: ticket.voice_created_at
+  };
+}
+
+function isIncomingNeighborVoice(ticket) {
+  const session = activeVoiceSessionForTicket(ticket);
+  return !!session
+    && String(session.target_type || "").toUpperCase() === "RESOLVER"
+    && String(session.requested_by || "").toUpperCase() === "NEIGHBOR";
+}
+
+function voiceSessionLabel(session) {
+  if (!session) return "";
+  const status = String(session.status || "CREATED").toUpperCase();
+  if (status === "CONNECTED") return "En llamada segura";
+  if (status === "RINGING" || status === "WAITING") return "Llamada entrante del vecino";
+  return "Vecino solicita llamada segura";
+}
+
+function saveKnownVoiceSessionIds() {
+  localStorage.setItem("resolver_known_voice_session_ids", JSON.stringify([...knownVoiceSessionIds].slice(-100)));
+}
+
 function renderTickets() {
   const list = $("ticketsList");
   const tickets = stateCache?.tickets || [];
@@ -472,7 +512,7 @@ function renderTickets() {
 
   list.innerHTML = source.map(ticketCard).join("");
   list.querySelectorAll("[data-action]").forEach((btn) => {
-    btn.addEventListener("click", () => handleTicketAction(btn.dataset.action, btn.dataset.id));
+    btn.addEventListener("click", () => handleTicketAction(btn.dataset.action, btn.dataset.id, btn.dataset.sessionId));
   });
 }
 
@@ -486,6 +526,8 @@ function ticketCard(t) {
   const sector = ticketIncidentSector(t);
   const meta = `${t.citizen_name || "Vecino"} · ${sector} · ${ticketAge(t)} · ${stateLabel(t.state)}`;
   const idShort = String(t.id || "").slice(0, 8).toUpperCase();
+  const incomingVoice = activeVoiceSessionForTicket(t);
+  const incomingVoiceForMe = isIncomingNeighborVoice(t);
 
   let actions = "";
 
@@ -511,12 +553,17 @@ function ticketCard(t) {
   actions += `<button class="secondary" data-action="detail" data-id="${t.id}">Ver detalle</button>`;
   if (hasCoords) actions += `<button class="secondary" data-action="route" data-id="${t.id}">🗺️ Ver mapa y ruta</button>`;
 
+  if (incomingVoiceForMe) {
+    actions += `<div class="incoming-call-banner full"><strong>📞 ${escapeHtml(voiceSessionLabel(incomingVoice))}</strong><span>El vecino espera que atiendas esta llamada segura.</span></div>`;
+    actions += `<button class="primary full incoming-call-button" data-action="answer-voice" data-id="${t.id}" data-session-id="${escapeHtml(incomingVoice.id || incomingVoice.wa_center_session_id || 'latest')}">☎️ Atender llamada del vecino</button>`;
+  }
+
   if (canUpdateField) {
     actions += `<div class="action-title full">Comunicación y evidencia</div>`;
     actions += `<button class="field-action" data-action="field-text" data-id="${t.id}">📝 Antecedente</button>`;
     actions += `<button class="field-action" data-action="field-audio" data-id="${t.id}">🎙️ Audio</button>`;
     actions += `<button class="field-action" data-action="field-video" data-id="${t.id}">📹 Video</button>`;
-    actions += `<button class="field-action" data-action="secure-call" data-id="${t.id}">📞 Llamar vecino</button>`;
+    actions += `<button class="field-action" data-action="secure-call" data-id="${t.id}">📞 Iniciar llamada al vecino</button>`;
   }
 
   return `
@@ -535,6 +582,7 @@ function ticketCard(t) {
         <div><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "—")}</div>
         <div><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "—")}</div>
         <div><strong>Asignación:</strong> ${assigned ? "Asignado a mí" : available ? "Disponible" : escapeHtml(t.resolver_name || "Otro resolutor")}</div>
+        ${incomingVoice ? `<div><strong>Llamada:</strong> ${escapeHtml(voiceSessionLabel(incomingVoice))}</div>` : ""}
       </div>
       <div class="actions">${actions}</div>
     </article>`;
@@ -668,7 +716,22 @@ async function requestSecureCall(ticketId) {
   }
 }
 
-async function handleTicketAction(action, id) {
+async function answerNeighborVoice(ticketId, sessionId = "latest") {
+  if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  try {
+    toast("Atendiendo llamada segura del vecino...");
+    const data = await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/join`, {
+      method: "POST",
+      body: JSON.stringify({ resolver_user_id: user.id })
+    });
+    await connectResolverVoice(data.voice_session);
+    await loadState();
+  } catch (err) {
+    toast(err.message || "No se pudo atender la llamada segura");
+  }
+}
+
+async function handleTicketAction(action, id, sessionId = null) {
   const t = findTicket(id);
   if (!t) return;
 
@@ -679,6 +742,9 @@ async function handleTicketAction(action, id) {
     if (action === "field-audio") return openFieldPanel(t.id, "audio");
     if (action === "field-video") return openFieldPanel(t.id, "video");
     if (action === "secure-call") return requestSecureCall(t.id);
+    if (action === "answer-voice") {
+      return answerNeighborVoice(t.id, sessionId || activeVoiceSessionForTicket(t)?.id || "latest");
+    }
 
     if (action === "accept") await api(`/tickets/${id}/accept`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id }) });
     if (action === "reject") {
@@ -725,7 +791,8 @@ function showTicketDetail(t) {
     </section>
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
-      ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Llamar vecino</button>` : ""}
+      ${isIncomingNeighborVoice(t) ? `<button class="primary full incoming-call-button" type="button" id="btnDetailAnswerCall">☎️ Atender llamada del vecino</button>` : ""}
+      ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Iniciar llamada al vecino</button>` : ""}
     </div>
   `;
 
@@ -759,6 +826,11 @@ function showTicketDetail(t) {
     if (audioBtn) audioBtn.onclick = () => { closeTicketModal(); openFieldPanel(t.id, "audio"); };
     const videoBtn = $("btnDetailVideo");
     if (videoBtn) videoBtn.onclick = () => { closeTicketModal(); openFieldPanel(t.id, "video"); };
+    const answerBtn = $("btnDetailAnswerCall");
+    if (answerBtn) answerBtn.onclick = () => {
+      const session = activeVoiceSessionForTicket(t);
+      answerNeighborVoice(t.id, session?.id || session?.wa_center_session_id || "latest");
+    };
     const callBtn = $("btnDetailCall");
     if (callBtn) callBtn.onclick = () => { requestSecureCall(t.id); };
   }, 0);
@@ -1166,6 +1238,42 @@ function isTicketAssignedOrPendingForMe(ticket) {
   return isAssignedToMe(ticket) || isPendingForMe(ticket);
 }
 
+
+async function notifyIncomingVoiceCalls(tickets) {
+  if (!Array.isArray(tickets) || !user) return;
+  const incoming = tickets.filter(t => isAssignedToMe(t) && isIncomingNeighborVoice(t));
+  const newOnes = incoming.filter(t => {
+    const session = activeVoiceSessionForTicket(t);
+    const key = session?.id || session?.wa_center_session_id;
+    return key && !knownVoiceSessionIds.has(String(key));
+  });
+
+  incoming.forEach(t => {
+    const session = activeVoiceSessionForTicket(t);
+    const key = session?.id || session?.wa_center_session_id;
+    if (key) knownVoiceSessionIds.add(String(key));
+  });
+  saveKnownVoiceSessionIds();
+  if (!newOnes.length) return;
+
+  const ticket = newOnes[0];
+  playResolverAlertSound();
+  vibrateResolverAlert();
+  if (getResolverSetting(SETTINGS_KEYS.browserNotification, true)) {
+    const ok = await ensureBrowserNotificationPermission();
+    if (ok) {
+      try {
+        new Notification("📞 Llamada entrante del vecino", {
+          body: `${ticket.citizen_name || "Vecino"} solicita llamada segura por ${typeLabel(ticket.alert_type)}`,
+          tag: `voice-${activeVoiceSessionForTicket(ticket)?.id || ticket.id}`,
+          requireInteraction: true
+        });
+      } catch (_) {}
+    }
+  }
+  toast(`📞 Llamada entrante del vecino · ${ticket.citizen_name || "Vecino"}`);
+}
+
 async function notifyNewAssignedTickets(tickets) {
   if (!Array.isArray(tickets) || !user) return;
   const assigned = tickets.filter(t => isTicketAssignedOrPendingForMe(t) && !TERMINAL_STATES.includes(t.state));
@@ -1219,6 +1327,7 @@ async function loadState() {
       setTimeout(() => $("reconcileBox").classList.add("hidden"), 5500);
     }
     await notifyNewAssignedTickets(data.tickets || []);
+    await notifyIncomingVoiceCalls(data.tickets || []);
     renderTickets();
   } catch (err) {
     toast(err.message);
