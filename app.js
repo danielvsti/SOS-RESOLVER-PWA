@@ -647,7 +647,7 @@ async function connectResolverVoice(voiceSession) {
   const destination = webrtc.destination;
   if (!webrtc.username || !destination) throw new Error("Credenciales WebRTC incompletas");
 
-  toast("Conectando llamada segura...");
+  toast("Entrando a llamada segura...");
   const socket = new JsSIP.WebSocketInterface(wssUrl);
   const config = {
     sockets: [socket],
@@ -664,15 +664,18 @@ async function connectResolverVoice(voiceSession) {
   resolverVoice.ua = ua;
   resolverVoice.session = voiceSession;
 
+  ua.on("connected", () => toast("Audio seguro conectado. Registrando llamada..."));
+  ua.on("disconnected", () => toast("Audio desconectado"));
+
   ua.on("registered", () => {
-    toast("Registrado. Entrando al bridge...");
+    toast("Entrando al canal de voz seguro...");
     const target = `sip:${destination}@${sipDomain}`;
     const call = ua.call(target, {
       mediaConstraints: { audio: true, video: false },
       pcConfig: { iceServers: voiceSession?.ice_servers || [] },
       eventHandlers: {
-        progress: () => toast("Llamada segura en progreso..."),
-        confirmed: () => toast("En llamada segura"),
+        progress: () => toast("Llamando... esperando conexión del vecino"),
+        confirmed: () => toast("✅ En llamada segura"),
         ended: () => stopResolverVoice(),
         failed: (e) => {
           console.error("WA-Center resolver call failed", e);
@@ -708,7 +711,7 @@ async function requestSecureCall(ticketId) {
       body: JSON.stringify({ resolver_user_id: user.id })
     });
     const waSession = data.voice_session?.wa_center_session_id || data.voice_session?.id || "";
-    toast(waSession ? `Llamada segura creada · ${waSession}` : "Llamada segura creada");
+    toast("Llamada segura solicitada al vecino. Entrando al canal de audio...");
     await connectResolverVoice(data.voice_session);
     await loadState();
   } catch (err) {
