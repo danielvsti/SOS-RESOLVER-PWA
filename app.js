@@ -35,7 +35,15 @@ let recordingStartedAt = null;
 let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
 let knownVoiceSessionIds = new Set(JSON.parse(localStorage.getItem("resolver_known_voice_session_ids") || "[]"));
 let lastNotificationAt = 0;
-let resolverVoice = { session: null, ua: null, call: null };
+let resolverVoice = {
+  session: null,
+  ua: null,
+  call: null,
+  ticketId: null,
+  sessionId: null,
+  status: "idle",
+  statusMessage: "Sin llamada activa"
+};
 
 const STATUS_LABELS = {
   AVAILABLE: "Disponible",
@@ -490,6 +498,37 @@ function voiceSessionLabel(session) {
   if (status === "RINGING" || status === "WAITING") return "Llamada entrante del vecino";
   return "Vecino solicita llamada segura";
 }
+function resolverVoiceSessionKey(session) {
+  return session?.id || session?.wa_center_session_id || null;
+}
+
+function setResolverVoiceStatus(message, status = null) {
+  resolverVoice.statusMessage = message || resolverVoice.statusMessage || "Llamada segura";
+  if (status) resolverVoice.status = status;
+  toast(resolverVoice.statusMessage);
+  try {
+    if (stateCache) renderTickets();
+  } catch {}
+}
+
+function isResolverVoiceActiveForTicket(ticket) {
+  if (!ticket || String(resolverVoice.ticketId || "") !== String(ticket.id || "")) return false;
+  return !["idle", "ended", "failed"].includes(String(resolverVoice.status || "idle"));
+}
+
+function resolverVoiceControlHtml(ticket) {
+  if (!isResolverVoiceActiveForTicket(ticket)) return "";
+  const status = escapeHtml(resolverVoice.statusMessage || "Llamada segura activa");
+  const isLive = String(resolverVoice.status || "").toLowerCase() === "connected";
+  const label = isLive ? "✅ En llamada segura" : "📞 Llamada segura en curso";
+  return `
+    <div class="resolver-active-call-panel full">
+      <strong>${label}</strong>
+      <span>${status}</span>
+      <button class="secondary" data-action="hangup-voice" data-id="${escapeHtml(ticket.id)}">Colgar llamada</button>
+    </div>`;
+}
+
 
 function saveKnownVoiceSessionIds() {
   localStorage.setItem("resolver_known_voice_session_ids", JSON.stringify([...knownVoiceSessionIds].slice(-100)));
@@ -553,7 +592,10 @@ function ticketCard(t) {
   actions += `<button class="secondary" data-action="detail" data-id="${t.id}">Ver detalle</button>`;
   if (hasCoords) actions += `<button class="secondary" data-action="route" data-id="${t.id}">🗺️ Ver mapa y ruta</button>`;
 
-  if (incomingVoiceForMe) {
+  const hasActiveVoiceForThisTicket = isResolverVoiceActiveForTicket(t);
+  if (hasActiveVoiceForThisTicket) {
+    actions += resolverVoiceControlHtml(t);
+  } else if (incomingVoiceForMe) {
     actions += `<div class="incoming-call-banner full"><strong>📞 ${escapeHtml(voiceSessionLabel(incomingVoice))}</strong><span>El vecino espera que atiendas esta llamada segura.</span></div>`;
     actions += `<button class="primary full incoming-call-button" data-action="answer-voice" data-id="${t.id}" data-session-id="${escapeHtml(incomingVoice.id || incomingVoice.wa_center_session_id || 'latest')}">☎️ Atender llamada del vecino</button>`;
   }
@@ -634,12 +676,27 @@ function stopResolverVoice() {
   try { if (resolverVoice.ua) resolverVoice.ua.stop(); } catch {}
   resolverVoice.ua = null;
   resolverVoice.call = null;
+  resolverVoice.status = "ended";
+  resolverVoice.statusMessage = "Llamada segura finalizada";
   toast("Llamada segura finalizada");
+  try { if (stateCache) renderTickets(); } catch {}
 }
 
-async function connectResolverVoice(voiceSession) {
+async function connectResolverVoice(voiceSession, options = {}) {
   const webrtc = voiceSession?.webrtc || voiceSession?.party_b_webrtc || null;
   if (!webrtc) throw new Error("No hay credenciales WebRTC para el resolutor");
+
+  const nextSessionId = resolverVoiceSessionKey(voiceSession);
+  if (resolverVoice.call && resolverVoice.sessionId && nextSessionId && resolverVoice.sessionId === nextSessionId && !["ended", "failed"].includes(String(resolverVoice.status || ""))) {
+    setResolverVoiceStatus("Ya estás dentro o entrando a esta llamada segura.", resolverVoice.status || "connecting");
+    return;
+  }
+
+  resolverVoice.ticketId = options.ticketId || resolverVoice.ticketId || voiceSession?.ticket_id || null;
+  resolverVoice.sessionId = nextSessionId;
+  resolverVoice.session = voiceSession;
+  setResolverVoiceStatus("Entrando a llamada segura...", "connecting");
+
   await ensureResolverJsSIPLoaded();
 
   const sipDomain = webrtc.sip_domain || "wa-center.vsti.cl";
@@ -647,7 +704,7 @@ async function connectResolverVoice(voiceSession) {
   const destination = webrtc.destination;
   if (!webrtc.username || !destination) throw new Error("Credenciales WebRTC incompletas");
 
-  toast("Entrando a llamada segura...");
+  setResolverVoiceStatus("Conectando audio seguro...", "connecting");
   const socket = new JsSIP.WebSocketInterface(wssUrl);
   const config = {
     sockets: [socket],
@@ -664,22 +721,22 @@ async function connectResolverVoice(voiceSession) {
   resolverVoice.ua = ua;
   resolverVoice.session = voiceSession;
 
-  ua.on("connected", () => toast("Audio seguro conectado. Registrando llamada..."));
-  ua.on("disconnected", () => toast("Audio desconectado"));
+  ua.on("connected", () => setResolverVoiceStatus("Audio seguro conectado. Registrando llamada...", "registering"));
+  ua.on("disconnected", () => setResolverVoiceStatus("Audio desconectado. Puedes reintentar o colgar.", "disconnected"));
 
   ua.on("registered", () => {
-    toast("Entrando al canal de voz seguro...");
+    setResolverVoiceStatus("Entrando al canal de voz seguro...", "calling");
     const target = `sip:${destination}@${sipDomain}`;
     const call = ua.call(target, {
       mediaConstraints: { audio: true, video: false },
       pcConfig: { iceServers: voiceSession?.ice_servers || [] },
       eventHandlers: {
-        progress: () => toast("Llamando... esperando conexión del vecino"),
-        confirmed: () => toast("✅ En llamada segura"),
+        progress: () => setResolverVoiceStatus("Llamando... esperando que el vecino entre a la llamada.", "ringing"),
+        confirmed: () => setResolverVoiceStatus("✅ En llamada segura. Ya puedes hablar con el vecino.", "connected"),
         ended: () => stopResolverVoice(),
         failed: (e) => {
           console.error("WA-Center resolver call failed", e);
-          toast(`Llamada fallida (${e.cause || "sin detalle"})`);
+          setResolverVoiceStatus(`Llamada fallida (${e.cause || "sin detalle"})`, "failed");
         }
       }
     });
@@ -698,7 +755,7 @@ async function connectResolverVoice(voiceSession) {
   });
   ua.on("registrationFailed", (e) => {
     console.error("WA-Center resolver registration failed", e);
-    toast(`Registro WebRTC fallido (${e.cause || "sin detalle"})`);
+    setResolverVoiceStatus(`Registro WebRTC fallido (${e.cause || "sin detalle"})`, "failed");
   });
   ua.start();
 }
@@ -712,7 +769,7 @@ async function requestSecureCall(ticketId) {
     });
     const waSession = data.voice_session?.wa_center_session_id || data.voice_session?.id || "";
     toast("Llamada segura solicitada al vecino. Entrando al canal de audio...");
-    await connectResolverVoice(data.voice_session);
+    await connectResolverVoice(data.voice_session, { ticketId, direction: "outgoing" });
     await loadState();
   } catch (err) {
     toast(err.message || "No se pudo solicitar llamada segura");
@@ -727,7 +784,7 @@ async function answerNeighborVoice(ticketId, sessionId = "latest") {
       method: "POST",
       body: JSON.stringify({ resolver_user_id: user.id })
     });
-    await connectResolverVoice(data.voice_session);
+    await connectResolverVoice(data.voice_session, { ticketId, direction: "incoming" });
     await loadState();
   } catch (err) {
     toast(err.message || "No se pudo atender la llamada segura");
@@ -745,6 +802,7 @@ async function handleTicketAction(action, id, sessionId = null) {
     if (action === "field-audio") return openFieldPanel(t.id, "audio");
     if (action === "field-video") return openFieldPanel(t.id, "video");
     if (action === "secure-call") return requestSecureCall(t.id);
+    if (action === "hangup-voice") return stopResolverVoice();
     if (action === "answer-voice") {
       return answerNeighborVoice(t.id, sessionId || activeVoiceSessionForTicket(t)?.id || "latest");
     }

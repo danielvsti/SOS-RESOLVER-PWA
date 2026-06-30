@@ -278,3 +278,19 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
   70% { box-shadow: 0 0 0 12px rgba(220,38,38,0); }
   100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
 }
+
+
+.resolver-active-call-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #ecfdf5;
+  border: 2px solid #86efac;
+  color: #14532d;
+  box-shadow: 0 12px 28px rgba(22,163,74,.14);
+}
+.resolver-active-call-panel strong { font-size: 16px; }
+.resolver-active-call-panel span { font-size: 13px; font-weight: 800; color: #166534; line-height: 1.35; }
+.resolver-active-call-panel button { justify-self: start; }
