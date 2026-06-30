@@ -1283,7 +1283,7 @@ async function login() {
     return;
   }
   try {
-    const resp = await api("/auth/login-demo", { method: "POST", body: JSON.stringify({ phone }) });
+    const resp = await api("/resolver/auth/login", { method: "POST", body: JSON.stringify({ phone }) });
     if (resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol RESOLVER");
     user = resp.user;
     localStorage.setItem("resolver_user", JSON.stringify(user));
