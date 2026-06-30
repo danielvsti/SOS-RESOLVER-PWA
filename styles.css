@@ -252,3 +252,5 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .full { width: 100%; }
 .danger-soft { color: #b91c1c; border-color: #fecaca; background: #fff1f2; }
 .danger-soft:hover { background: #ffe4e6; }
+
+#resolverRemoteAudio { width:1px; height:1px; opacity:0; position:fixed; left:-9999px; }

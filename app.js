@@ -34,6 +34,7 @@ let recordingTimerInterval = null;
 let recordingStartedAt = null;
 let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
 let lastNotificationAt = 0;
+let resolverVoice = { session: null, ua: null, call: null };
 
 const STATUS_LABELS = {
   AVAILABLE: "Disponible",
@@ -543,6 +544,114 @@ function findTicket(id) {
   return (stateCache?.tickets || []).find((t) => String(t.id) === String(id));
 }
 
+
+function loadResolverScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (window.JsSIP) return resolve();
+    const existing = Array.from(document.scripts).find((script) => script.src && script.src.includes(src));
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureResolverJsSIPLoaded() {
+  if (window.JsSIP) return;
+  const sources = [
+    "vendor/jssip.min.js",
+    "https://cdn.jsdelivr.net/npm/jssip@3.10.1/dist/jssip.min.js",
+    "https://unpkg.com/jssip@3.10.1/dist/jssip.min.js"
+  ];
+  for (const src of sources) {
+    try {
+      await loadResolverScriptOnce(src);
+      if (window.JsSIP) return;
+    } catch (error) {
+      console.warn("No se pudo cargar JsSIP desde", src, error);
+    }
+  }
+  throw new Error("No se pudo cargar JsSIP. Agrega vendor/jssip.min.js o revisa CDN.");
+}
+
+function stopResolverVoice() {
+  try { if (resolverVoice.call) resolverVoice.call.terminate(); } catch {}
+  try { if (resolverVoice.ua) resolverVoice.ua.stop(); } catch {}
+  resolverVoice.ua = null;
+  resolverVoice.call = null;
+  toast("Llamada segura finalizada");
+}
+
+async function connectResolverVoice(voiceSession) {
+  const webrtc = voiceSession?.webrtc || voiceSession?.party_b_webrtc || null;
+  if (!webrtc) throw new Error("No hay credenciales WebRTC para el resolutor");
+  await ensureResolverJsSIPLoaded();
+
+  const sipDomain = webrtc.sip_domain || "wa-center.vsti.cl";
+  const wssUrl = webrtc.wss_url || "wss://wa-center.vsti.cl/ws";
+  const destination = webrtc.destination;
+  if (!webrtc.username || !destination) throw new Error("Credenciales WebRTC incompletas");
+
+  toast("Conectando llamada segura...");
+  const socket = new JsSIP.WebSocketInterface(wssUrl);
+  const config = {
+    sockets: [socket],
+    uri: `sip:${webrtc.username}@${sipDomain}`,
+    authorization_user: webrtc.username,
+    register: true,
+    session_timers: false,
+    realm: webrtc.realm || "asterisk"
+  };
+  if (webrtc.ha1) config.ha1 = webrtc.ha1;
+  else config.password = webrtc.password;
+
+  const ua = new JsSIP.UA(config);
+  resolverVoice.ua = ua;
+  resolverVoice.session = voiceSession;
+
+  ua.on("registered", () => {
+    toast("Registrado. Entrando al bridge...");
+    const target = `sip:${destination}@${sipDomain}`;
+    const call = ua.call(target, {
+      mediaConstraints: { audio: true, video: false },
+      pcConfig: { iceServers: voiceSession?.ice_servers || [] },
+      eventHandlers: {
+        progress: () => toast("Llamada segura en progreso..."),
+        confirmed: () => toast("En llamada segura"),
+        ended: () => stopResolverVoice(),
+        failed: (e) => {
+          console.error("WA-Center resolver call failed", e);
+          toast(`Llamada fallida (${e.cause || "sin detalle"})`);
+        }
+      }
+    });
+    resolverVoice.call = call;
+    call.connection.addEventListener("track", (event) => {
+      let audio = $("resolverRemoteAudio");
+      if (!audio) {
+        audio = document.createElement("audio");
+        audio.id = "resolverRemoteAudio";
+        audio.autoplay = true;
+        audio.playsInline = true;
+        document.body.appendChild(audio);
+      }
+      audio.srcObject = event.streams[0];
+    });
+  });
+  ua.on("registrationFailed", (e) => {
+    console.error("WA-Center resolver registration failed", e);
+    toast(`Registro WebRTC fallido (${e.cause || "sin detalle"})`);
+  });
+  ua.start();
+}
+
 async function requestSecureCall(ticketId) {
   if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
   try {
@@ -551,7 +660,8 @@ async function requestSecureCall(ticketId) {
       body: JSON.stringify({ resolver_user_id: user.id })
     });
     const waSession = data.voice_session?.wa_center_session_id || data.voice_session?.id || "";
-    toast(waSession ? `Llamada segura solicitada · ${waSession}` : "Llamada segura solicitada");
+    toast(waSession ? `Llamada segura creada · ${waSession}` : "Llamada segura creada");
+    await connectResolverVoice(data.voice_session);
     await loadState();
   } catch (err) {
     toast(err.message || "No se pudo solicitar llamada segura");
