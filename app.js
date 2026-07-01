@@ -565,6 +565,7 @@ function ticketCard(t) {
   const sector = ticketIncidentSector(t);
   const meta = `${t.citizen_name || "Vecino"} · ${sector} · ${ticketAge(t)} · ${stateLabel(t.state)}`;
   const idShort = String(t.id || "").slice(0, 8).toUpperCase();
+  const reportCount = Number(t.report_count || 0);
   const incomingVoice = activeVoiceSessionForTicket(t);
   const incomingVoiceForMe = isIncomingNeighborVoice(t);
 
@@ -623,6 +624,7 @@ function ticketCard(t) {
         <div><strong>Sector del evento:</strong> ${escapeHtml(sector)}</div>
         <div><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "—")}</div>
         <div><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "—")}</div>
+        ${reportCount > 1 ? `<div><strong>Reportes ciudadanos:</strong> 👥 ${reportCount} vecinos reportaron este incidente</div>` : ""}
         <div><strong>Asignación:</strong> ${assigned ? "Asignado a mí" : available ? "Disponible" : escapeHtml(t.resolver_name || "Otro resolutor")}</div>
         ${incomingVoice ? `<div><strong>Llamada:</strong> ${escapeHtml(voiceSessionLabel(incomingVoice))}</div>` : ""}
       </div>
@@ -839,6 +841,7 @@ function showTicketDetail(t) {
     <p><strong>Estado:</strong> ${escapeHtml(stateLabel(t.state))}</p>
     <p><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "No informado")}</p>
     <p><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "No informado")}</p>
+    ${Number(t.report_count || 0) > 1 ? `<p><strong>Reportes ciudadanos:</strong> 👥 ${escapeHtml(t.report_count)} vecinos reportaron este incidente.</p>` : ""}
     <p><strong>Descripción:</strong> ${escapeHtml(t.description || "Sin descripción")}</p>
     <p><strong>Ubicación:</strong> ${Number.isFinite(lat) ? lat.toFixed(5) : "—"}, ${Number.isFinite(lon) ? lon.toFixed(5) : "—"}</p>
     <section class="resolver-activity-card">
