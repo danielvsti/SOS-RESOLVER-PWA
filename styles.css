@@ -294,3 +294,195 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .resolver-active-call-panel strong { font-size: 16px; }
 .resolver-active-call-panel span { font-size: 13px; font-weight: 800; color: #166534; line-height: 1.35; }
 .resolver-active-call-panel button { justify-self: start; }
+
+
+/* ==========================================================================
+   REDISEÑO UI/UX v11 — Refresh visual "app nativa" (VS&TI / UX Refresh)
+   Capa 100% aditiva: no se eliminó ni renombró ninguna regla anterior.
+   Solo se refinan tokens visuales, tipografía, elevación, motion y estados.
+   No toca IDs, no toca lógica, no cambia el árbol de eventos de app.js.
+   ========================================================================== */
+
+:root{
+  --rz-ink:#0b1120;
+  --rz-surface:#eef1f6;
+  --rz-line:#e3e7ef;
+  --rz-blue:#2563eb;
+  --rz-blue-dark:#1e40af;
+  --rz-radius-lg:26px;
+  --rz-radius-md:18px;
+  --rz-shadow-sm:0 2px 10px rgba(15,23,42,.06);
+  --rz-shadow-md:0 12px 30px rgba(15,23,42,.10);
+  --rz-shadow-lg:0 26px 60px rgba(15,23,42,.20);
+  --rz-ease:cubic-bezier(.22,.9,.32,1.1);
+  --rz-safe-top:env(safe-area-inset-top,0px);
+  --rz-safe-bottom:env(safe-area-inset-bottom,0px);
+}
+
+html{ -webkit-text-size-adjust:100%; }
+
+html, body{
+  background:
+    radial-gradient(1100px 500px at 50% -14%, #1c2740 0%, var(--rz-surface) 40%),
+    var(--rz-surface);
+}
+
+body{
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
+  overscroll-behavior-y:contain;
+}
+
+button{ touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible{
+  outline:3px solid #93c5fd;
+  outline-offset:2px;
+}
+
+/* Topbar: blur nativo + status bar segura */
+.topbar{
+  padding:calc(12px + var(--rz-safe-top)) 16px 12px;
+  background:rgba(11,17,32,.92);
+  -webkit-backdrop-filter:blur(14px);
+  backdrop-filter:blur(14px);
+  box-shadow:0 12px 30px rgba(15,23,42,.28);
+}
+.brand img{ box-shadow:0 6px 16px rgba(0,0,0,.3); }
+.ghost{ border-radius:14px; transition:transform .1s; }
+.ghost:active{ transform:scale(.9); }
+
+main{ padding-bottom:calc(16px + var(--rz-safe-bottom)); }
+
+/* Tarjetas: elevación consistente tipo app nativa */
+.card, .status-card{
+  border-radius:var(--rz-radius-md);
+  box-shadow:var(--rz-shadow-md);
+  border-color:var(--rz-line);
+}
+.login-card{ border-radius:var(--rz-radius-lg); }
+.login-card h1{ font-weight:900; letter-spacing:-.01em; }
+input, textarea{ border-radius:14px; min-height:50px; }
+input:focus, textarea:focus, select:focus{
+  outline:none;
+  border-color:var(--rz-blue);
+  box-shadow:0 0 0 4px rgba(37,99,235,.14);
+}
+
+button{ transition:transform .1s var(--rz-ease), filter .15s, box-shadow .15s; border-radius:14px; }
+button:active{ transform:scale(.97); }
+.primary{ background:linear-gradient(180deg,#ef4444,#b91c1c); box-shadow:0 14px 30px rgba(220,38,38,.28); }
+.primary:hover{ background:linear-gradient(180deg,#ef4444,#991b1b); }
+.secondary{ background:#e7ebf3; }
+
+/* Estado operacional: segmented control grande y muy legible */
+.status-card{ align-items:center; }
+.status-pill{
+  padding:10px 14px;
+  font-weight:900;
+  letter-spacing:.02em;
+  box-shadow:inset 0 0 0 1px rgba(15,23,42,.04);
+}
+.status-pill.available{ background:#dcfce7; color:#14532d; box-shadow:inset 0 0 0 1px rgba(22,163,74,.25); }
+.status-pill.busy{ background:#fef3c7; color:#78350f; box-shadow:inset 0 0 0 1px rgba(245,158,11,.3); }
+.status-pill.offline{ background:#e2e8f0; color:#334155; }
+.status-pill.en_route, .status-pill.on_site{ background:#dbeafe; color:#1e3a8a; box-shadow:inset 0 0 0 1px rgba(37,99,235,.25); }
+
+.controls-grid{ gap:10px; }
+.control{
+  min-height:58px;
+  border-radius:16px;
+  font-weight:900;
+  box-shadow:var(--rz-shadow-sm);
+}
+.control.available{ background:linear-gradient(180deg,#22c55e,#15803d); }
+.control.busy{ background:linear-gradient(180deg,#fbbf24,#d97706); color:#1c1300; }
+.control.offline{ background:linear-gradient(180deg,#475569,#1e293b); }
+
+.notice{ border-radius:18px; box-shadow:var(--rz-shadow-sm); }
+
+/* Ubicación / GPS */
+.card.compact{ border-radius:18px; }
+
+/* Tabs tipo segmented control */
+.tabs{
+  background:#e2e8f0;
+  padding:5px;
+  border-radius:16px;
+  gap:4px;
+}
+.tab{
+  border-radius:12px;
+  font-weight:900;
+  transition:background .15s, color .15s, transform .1s;
+  background:transparent;
+  color:#334155;
+}
+.tab.active{
+  background:var(--rz-ink);
+  color:#fff;
+  box-shadow:0 8px 18px rgba(15,23,42,.22);
+}
+.tab:active{ transform:scale(.97); }
+
+/* Tickets: tarjeta de alerta con jerarquía clara (tipo, prioridad, sector, estado) */
+.ticket-card{
+  border-radius:22px;
+  box-shadow:var(--rz-shadow-md);
+  transition:transform .12s var(--rz-ease), box-shadow .15s;
+  border-left-width:8px;
+}
+.ticket-card:active{ transform:scale(.995); }
+.ticket-card.priority-1{
+  box-shadow:0 16px 34px rgba(220,38,38,.20);
+  animation:ticketPriorityGlow 2.4s ease-in-out infinite;
+}
+@keyframes ticketPriorityGlow{
+  0%, 100%{ box-shadow:0 16px 34px rgba(220,38,38,.14); }
+  50%{ box-shadow:0 16px 34px rgba(220,38,38,.30); }
+}
+.ticket-title{ font-weight:950; letter-spacing:-.01em; }
+.badge{ font-weight:950; letter-spacing:.02em; }
+.actions button{ min-height:46px; }
+.field-action{ border-radius:14px; font-weight:900; }
+.field-action:active{ background:#dbeafe; }
+
+.empty{ border-radius:22px; }
+
+/* Modales: hoja tipo bottom-sheet con vidrio esmerilado */
+.modal{
+  background:rgba(8,12,22,.62);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+.modal-card{
+  border-radius:28px;
+  box-shadow:0 30px 70px rgba(0,0,0,.4);
+}
+.modal-close{ transition:transform .1s; }
+.modal-close:active{ transform:scale(.9); }
+
+/* Ticket asignado: llamada a la acción muy visible con vibración visual */
+.incoming-call-banner{
+  border-radius:18px;
+}
+.incoming-call-button{ border-radius:16px; }
+
+.resolver-activity-item{ border-radius:16px; }
+
+/* Ruta / navegación */
+.route-card{ border-radius:30px; box-shadow:0 30px 80px rgba(0,0,0,.35); }
+.route-map{ border-radius:22px; }
+
+/* Recording banner */
+.recording-banner{ border-radius:20px; top:calc(16px + var(--rz-safe-top)); }
+
+.toast{ border-radius:18px; bottom:calc(16px + var(--rz-safe-bottom)); box-shadow:var(--rz-shadow-lg); }
+
+/* Settings */
+.settings-card{ border-radius:28px; }
+.settings-section{ border-radius:18px; }
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; }
+}
