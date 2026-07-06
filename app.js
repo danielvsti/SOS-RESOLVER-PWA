@@ -924,7 +924,11 @@ async function connectResolverVoice(voiceSession, options = {}) {
       pcConfig: { iceServers: voiceSession?.ice_servers || [] },
       eventHandlers: {
         progress: () => setResolverVoiceStatus("Llamando... esperando que el vecino entre a la llamada.", "ringing"),
-        confirmed: () => markResolverVoiceConnected(),
+        confirmed: () => {
+          // El anexo ya entró al bridge, pero esperamos la confirmación del
+          // backend antes de presentar la llamada como conectada.
+          setResolverVoiceStatus("Esperando confirmación del canal de voz…", "ringing");
+        },
         ended: () => {
           void stopResolverVoice({ notifyBackend: true, reason: "REMOTE_ENDED" });
         },
