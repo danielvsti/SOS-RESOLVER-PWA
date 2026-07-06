@@ -48,7 +48,7 @@ let resolverVoice = {
   durationTimer: null,
   connectedAt: null,
   connectedReported: false,
-  ringbackContext: null,
+  ringbackContexts: new Set(),
   ringbackInterval: null,
   muted: false,
   cleanupPromise: null,
@@ -713,6 +713,7 @@ function showResolverVoiceOverlay(ticket, session, mode = "incoming") {
   $("btnMuteVoice").classList.add("hidden");
   $("btnHangupVoice").classList.toggle("hidden", mode === "incoming");
   $("resolverVoiceOverlay").classList.remove("hidden");
+  if (mode === "incoming") startResolverRingback();
 }
 
 function hideResolverVoiceOverlay() {
@@ -781,41 +782,38 @@ function markResolverVoiceConnected() {
   try { if (stateCache) renderTickets(); } catch {}
 }
 
-function primeResolverRingback() {
+function playResolverRingbackBurst() {
   try {
-    if (resolverVoice.ringbackContext) return;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
-    resolverVoice.ringbackContext = new AudioContext();
-    resolverVoice.ringbackContext.resume?.().catch(() => null);
+    const contexts = resolverVoice.ringbackContexts;
+    const context = new AudioContext();
+    contexts.add(context);
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.22, context.currentTime + 0.03);
+    gain.gain.setValueAtTime(0.22, context.currentTime + 0.72);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.85);
+    gain.connect(context.destination);
+    [440, 480].forEach((frequency) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime);
+      oscillator.stop(context.currentTime + 0.85);
+    });
+    setTimeout(() => {
+      contexts.delete(context);
+      context.close().catch(() => null);
+    }, 1_100);
   } catch (error) {
-    console.warn("No se pudo preparar el tono de llamada", error);
+    console.warn("No se pudo reproducir el tono de llamada", error);
   }
-}
-
-function playResolverRingbackBurst() {
-  const context = resolverVoice.ringbackContext;
-  if (!context || context.state === "closed") return;
-  context.resume?.().catch(() => null);
-  const gain = context.createGain();
-  gain.gain.setValueAtTime(0.0001, context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.03);
-  gain.gain.setValueAtTime(0.12, context.currentTime + 0.72);
-  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.85);
-  gain.connect(context.destination);
-  [440, 480].forEach((frequency) => {
-    const oscillator = context.createOscillator();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(frequency, context.currentTime);
-    oscillator.connect(gain);
-    oscillator.start(context.currentTime);
-    oscillator.stop(context.currentTime + 0.85);
-  });
 }
 
 function startResolverRingback() {
   if (resolverVoice.ringbackInterval) return;
-  primeResolverRingback();
   playResolverRingbackBurst();
   resolverVoice.ringbackInterval = setInterval(playResolverRingbackBurst, 3_000);
 }
@@ -823,9 +821,10 @@ function startResolverRingback() {
 function stopResolverRingback() {
   clearInterval(resolverVoice.ringbackInterval);
   resolverVoice.ringbackInterval = null;
-  const context = resolverVoice.ringbackContext;
-  resolverVoice.ringbackContext = null;
-  try { context?.close?.().catch(() => null); } catch {}
+  resolverVoice.ringbackContexts.forEach((context) => {
+    try { context.close().catch(() => null); } catch {}
+  });
+  resolverVoice.ringbackContexts.clear();
 }
 
 async function reportResolverVoiceConnected() {
@@ -1052,7 +1051,6 @@ async function connectResolverVoice(voiceSession, options = {}) {
 
 async function requestSecureCall(ticketId) {
   if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
-  primeResolverRingback();
   try {
     const data = await api(`/resolver/tickets/${ticketId}/voice/request`, {
       method: "POST",
@@ -1080,6 +1078,7 @@ async function requestSecureCall(ticketId) {
 
 async function answerNeighborVoice(ticketId, sessionId = "latest") {
   if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  stopResolverRingback();
   try {
     toast("Atendiendo llamada segura del vecino...");
     await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/accept`, {
@@ -1684,6 +1683,7 @@ function syncIncomingVoiceOverlay(tickets) {
   if (!ticket) {
     if (resolverVoice.direction === "incoming" && resolverVoice.status === "ringing" && !resolverVoice.call) {
       resolverVoice.status = "ended";
+      stopResolverRingback();
       hideResolverVoiceOverlay();
     }
     return;
