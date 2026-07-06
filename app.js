@@ -48,6 +48,8 @@ let resolverVoice = {
   durationTimer: null,
   connectedAt: null,
   connectedReported: false,
+  ringbackContext: null,
+  ringbackInterval: null,
   muted: false,
   cleanupPromise: null,
   backendFinalized: false,
@@ -762,6 +764,7 @@ function updateResolverVoiceTimer() {
 }
 
 function markResolverVoiceConnected() {
+  stopResolverRingback();
   resolverVoice.status = "connected";
   resolverVoice.statusMessage = "En llamada con el vecino";
   resolverVoice.connectedAt = resolverVoice.connectedAt || Date.now();
@@ -776,6 +779,53 @@ function markResolverVoiceConnected() {
   clearInterval(resolverVoice.durationTimer);
   resolverVoice.durationTimer = setInterval(updateResolverVoiceTimer, 1000);
   try { if (stateCache) renderTickets(); } catch {}
+}
+
+function primeResolverRingback() {
+  try {
+    if (resolverVoice.ringbackContext) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    resolverVoice.ringbackContext = new AudioContext();
+    resolverVoice.ringbackContext.resume?.().catch(() => null);
+  } catch (error) {
+    console.warn("No se pudo preparar el tono de llamada", error);
+  }
+}
+
+function playResolverRingbackBurst() {
+  const context = resolverVoice.ringbackContext;
+  if (!context || context.state === "closed") return;
+  context.resume?.().catch(() => null);
+  const gain = context.createGain();
+  gain.gain.setValueAtTime(0.0001, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.03);
+  gain.gain.setValueAtTime(0.12, context.currentTime + 0.72);
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.85);
+  gain.connect(context.destination);
+  [440, 480].forEach((frequency) => {
+    const oscillator = context.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+    oscillator.connect(gain);
+    oscillator.start(context.currentTime);
+    oscillator.stop(context.currentTime + 0.85);
+  });
+}
+
+function startResolverRingback() {
+  if (resolverVoice.ringbackInterval) return;
+  primeResolverRingback();
+  playResolverRingbackBurst();
+  resolverVoice.ringbackInterval = setInterval(playResolverRingbackBurst, 3_000);
+}
+
+function stopResolverRingback() {
+  clearInterval(resolverVoice.ringbackInterval);
+  resolverVoice.ringbackInterval = null;
+  const context = resolverVoice.ringbackContext;
+  resolverVoice.ringbackContext = null;
+  try { context?.close?.().catch(() => null); } catch {}
 }
 
 async function reportResolverVoiceConnected() {
@@ -812,6 +862,7 @@ async function stopResolverVoice(options = {}) {
   resolverVoice.cleanupPromise = Promise.resolve();
   const cleanupTask = (async () => {
     clearResolverVoiceTimers();
+    stopResolverRingback();
     stopResolverMedia();
     try { resolverVoice.call?.terminate?.(); } catch {}
     try { resolverVoice.ua?.stop?.(); } catch {}
@@ -1001,6 +1052,7 @@ async function connectResolverVoice(voiceSession, options = {}) {
 
 async function requestSecureCall(ticketId) {
   if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  primeResolverRingback();
   try {
     const data = await api(`/resolver/tickets/${ticketId}/voice/request`, {
       method: "POST",
@@ -1010,6 +1062,7 @@ async function requestSecureCall(ticketId) {
     toast("Llamada segura solicitada al vecino. Entrando al canal de audio...");
     const ticket = findTicket(ticketId) || { id: ticketId };
     showResolverVoiceOverlay(ticket, data.voice_session, "outgoing");
+    startResolverRingback();
     await connectResolverVoice(data.voice_session, { ticketId, direction: "outgoing" });
     await loadState();
   } catch (err) {
