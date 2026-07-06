@@ -47,6 +47,7 @@ let resolverVoice = {
   statusPollTimer: null,
   durationTimer: null,
   connectedAt: null,
+  connectedReported: false,
   muted: false,
   cleanupPromise: null,
   backendFinalized: false,
@@ -777,6 +778,27 @@ function markResolverVoiceConnected() {
   try { if (stateCache) renderTickets(); } catch {}
 }
 
+async function reportResolverVoiceConnected() {
+  if (!resolverVoice.ticketId || !resolverVoice.sessionId || !user?.id || resolverVoice.connectedReported) return;
+  resolverVoice.connectedReported = true;
+
+  try {
+    const data = await api(
+      `/resolver/tickets/${resolverVoice.ticketId}/voice/sessions/${encodeURIComponent(resolverVoice.sessionId)}/connected`,
+      {
+        method: "POST",
+        body: JSON.stringify({ resolver_user_id: user.id })
+      }
+    );
+    if (String(data.voice_session?.status || "").toUpperCase() === "CONNECTED") {
+      markResolverVoiceConnected();
+    }
+  } catch (error) {
+    resolverVoice.connectedReported = false;
+    console.warn("No se pudo confirmar la entrada del resolutor al canal", error);
+  }
+}
+
 async function stopResolverVoice(options = {}) {
   if (resolverVoice.cleanupPromise) return resolverVoice.cleanupPromise;
   const {
@@ -871,6 +893,7 @@ async function connectResolverVoice(voiceSession, options = {}) {
   resolverVoice.session = voiceSession;
   resolverVoice.cleanupPromise = null;
   resolverVoice.backendFinalized = false;
+  resolverVoice.connectedReported = false;
   resolverVoice.direction = options.direction || resolverVoice.direction || "incoming";
   setResolverVoiceStatus("Entrando a llamada segura...", "connecting");
   $("resolverVoiceTitle").textContent = "Conectando llamada…";
@@ -928,6 +951,7 @@ async function connectResolverVoice(voiceSession, options = {}) {
           // El anexo ya entró al bridge, pero esperamos la confirmación del
           // backend antes de presentar la llamada como conectada.
           setResolverVoiceStatus("Esperando confirmación del canal de voz…", "ringing");
+          void reportResolverVoiceConnected();
         },
         ended: () => {
           void stopResolverVoice({ notifyBackend: true, reason: "REMOTE_ENDED" });
