@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f172a" />
   <title>Alerta Comunal Resolutor</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=12.4-call-lifecycle" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -204,7 +204,7 @@
         <section class="settings-section">
           <h3>Diagnóstico</h3>
           <p><strong>Servidor:</strong> conectado a producción</p>
-          <p><strong>Versión:</strong> Resolutor v11</p>
+          <p><strong>Versión:</strong> Resolutor v12.4</p>
         </section>
       </div>
     </div>
@@ -216,9 +216,26 @@
     <span id="recordingTimer">00:00</span>
   </div>
 
+  <div id="resolverVoiceOverlay" class="resolver-voice-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="resolverVoiceTitle">
+    <div class="resolver-voice-card">
+      <div class="resolver-voice-icon" aria-hidden="true">☎️</div>
+      <h2 id="resolverVoiceTitle">Llamada entrante</h2>
+      <p id="resolverVoiceCase">Caso</p>
+      <p id="resolverVoiceMessage">El vecino quiere entregar más detalles.</p>
+      <div id="resolverVoiceTimer" class="resolver-voice-timer hidden">00:00</div>
+      <div class="resolver-voice-actions">
+        <button id="btnRejectVoice" class="secondary" type="button">Rechazar</button>
+        <button id="btnAnswerVoice" class="primary" type="button">Contestar</button>
+        <button id="btnMuteVoice" class="secondary hidden" type="button">🎙️ Silenciar</button>
+        <button id="btnHangupVoice" class="danger hidden" type="button">Colgar</button>
+      </div>
+      <audio id="resolverRemoteAudio" autoplay playsinline></audio>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=12.4-call-lifecycle"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@ const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
 const RESOLVER_TOKEN_KEY = "sos_resolver_session_token";
 const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
-const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 10000);
+const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 3000);
 const GPS_HEARTBEAT_MS = Number(SOS_CONFIG.RESOLVER_GPS_HEARTBEAT_MS || 30000);
 const MAX_GPS_ACCURACY_METERS = Number(SOS_CONFIG.RESOLVER_GPS_MAX_ACCURACY_METERS || 150);
 
@@ -43,7 +43,18 @@ let resolverVoice = {
   ticketId: null,
   sessionId: null,
   status: "idle",
-  statusMessage: "Sin llamada activa"
+  statusMessage: "Sin llamada activa",
+  peerConnection: null,
+  statusPollTimer: null,
+  durationTimer: null,
+  connectedAt: null,
+  connectedReported: false,
+  ringbackContexts: new Set(),
+  ringbackInterval: null,
+  muted: false,
+  cleanupPromise: null,
+  backendFinalized: false,
+  direction: null
 };
 
 const STATUS_LABELS = {
@@ -476,7 +487,7 @@ function activeVoiceSessionForTicket(ticket) {
 
   if (!ticket.voice_session_id && !ticket.wa_center_session_id) return null;
   const status = String(ticket.voice_status || "CREATED").toUpperCase();
-  if (["FAILED", "ENDED", "EXPIRED", "NO_ANSWER"].includes(status)) return null;
+  if (["FAILED", "ENDED", "EXPIRED", "NO_ANSWER", "REJECTED"].includes(status)) return null;
 
   return {
     id: ticket.voice_session_id,
@@ -517,7 +528,7 @@ function setResolverVoiceStatus(message, status = null) {
 
 function isResolverVoiceActiveForTicket(ticket) {
   if (!ticket || String(resolverVoice.ticketId || "") !== String(ticket.id || "")) return false;
-  return !["idle", "ended", "failed"].includes(String(resolverVoice.status || "idle"));
+  return !["idle", "ended", "failed", "rejected", "no_answer"].includes(String(resolverVoice.status || "idle"));
 }
 
 function resolverVoiceControlHtml(ticket) {
@@ -677,15 +688,248 @@ async function ensureResolverJsSIPLoaded() {
   throw new Error("No se pudo cargar JsSIP. Agrega vendor/jssip.min.js o revisa CDN.");
 }
 
-function stopResolverVoice() {
-  try { if (resolverVoice.call) resolverVoice.call.terminate(); } catch {}
-  try { if (resolverVoice.ua) resolverVoice.ua.stop(); } catch {}
-  resolverVoice.ua = null;
-  resolverVoice.call = null;
-  resolverVoice.status = "ended";
-  resolverVoice.statusMessage = "Llamada segura finalizada";
-  toast("Llamada segura finalizada");
+const RESOLVER_VOICE_TERMINAL = new Set(["ended", "failed", "rejected", "no_answer"]);
+
+function resolverVoiceShortCase(ticketId) {
+  return `#${String(ticketId || "").slice(0, 8).toUpperCase()}`;
+}
+
+function showResolverVoiceOverlay(ticket, session, mode = "incoming") {
+  if (!ticket || !session) return;
+  resolverVoice.ticketId = ticket.id;
+  resolverVoice.sessionId = resolverVoiceSessionKey(session);
+  resolverVoice.session = session;
+  resolverVoice.direction = mode;
+  if (mode === "incoming") {
+    resolverVoice.status = "ringing";
+    resolverVoice.cleanupPromise = null;
+    resolverVoice.backendFinalized = false;
+  }
+
+  $("resolverVoiceTitle").textContent = mode === "incoming" ? "Llamada entrante" : "Conectando llamada…";
+  $("resolverVoiceCase").textContent = `Caso ${resolverVoiceShortCase(ticket.id)}`;
+  $("resolverVoiceMessage").textContent = mode === "incoming"
+    ? "El vecino quiere entregar más detalles."
+    : "Estamos conectando el canal de audio con el vecino.";
+  $("resolverVoiceTimer").classList.add("hidden");
+  $("btnRejectVoice").classList.toggle("hidden", mode !== "incoming");
+  $("btnAnswerVoice").classList.toggle("hidden", mode !== "incoming");
+  $("btnMuteVoice").classList.add("hidden");
+  $("btnHangupVoice").classList.toggle("hidden", mode === "incoming");
+  $("resolverVoiceOverlay").classList.remove("hidden");
+  if (mode === "incoming") startResolverRingback();
+}
+
+function hideResolverVoiceOverlay() {
+  $("resolverVoiceOverlay")?.classList.add("hidden");
+}
+
+function clearResolverVoiceTimers() {
+  clearInterval(resolverVoice.statusPollTimer);
+  clearInterval(resolverVoice.durationTimer);
+  resolverVoice.statusPollTimer = null;
+  resolverVoice.durationTimer = null;
+}
+
+function stopResolverMedia() {
+  const connection = resolverVoice.peerConnection || resolverVoice.call?.connection;
+  try {
+    connection?.getSenders?.().forEach((sender) => sender.track?.stop());
+    connection?.getReceivers?.().forEach((receiver) => receiver.track?.stop());
+  } catch {}
+  try {
+    if (connection && connection.signalingState !== "closed") connection.close();
+  } catch {}
+  resolverVoice.peerConnection = null;
+
+  const audio = $("resolverRemoteAudio");
+  try { audio?.srcObject?.getTracks?.().forEach((track) => track.stop()); } catch {}
+  try { audio?.pause?.(); } catch {}
+  if (audio) audio.srcObject = null;
+}
+
+async function notifyResolverVoiceEnded(reason = "HANGUP") {
+  if (!resolverVoice.ticketId || !resolverVoice.sessionId || !user?.id || resolverVoice.backendFinalized) return;
+  resolverVoice.backendFinalized = true;
+  await api(
+    `/resolver/tickets/${resolverVoice.ticketId}/voice/sessions/${encodeURIComponent(resolverVoice.sessionId)}/end`,
+    {
+      method: "POST",
+      body: JSON.stringify({ resolver_user_id: user.id, reason })
+    }
+  );
+}
+
+function updateResolverVoiceTimer() {
+  if (!resolverVoice.connectedAt) return;
+  const seconds = Math.max(0, Math.floor((Date.now() - resolverVoice.connectedAt) / 1000));
+  const minutesText = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const secondsText = String(seconds % 60).padStart(2, "0");
+  $("resolverVoiceTimer").textContent = `${minutesText}:${secondsText}`;
+}
+
+function markResolverVoiceConnected() {
+  stopResolverRingback();
+  resolverVoice.status = "connected";
+  resolverVoice.statusMessage = "En llamada con el vecino";
+  resolverVoice.connectedAt = resolverVoice.connectedAt || Date.now();
+  $("resolverVoiceTitle").textContent = "Llamada conectada";
+  $("resolverVoiceMessage").textContent = "Ya puedes conversar con el vecino.";
+  $("resolverVoiceTimer").classList.remove("hidden");
+  $("btnRejectVoice").classList.add("hidden");
+  $("btnAnswerVoice").classList.add("hidden");
+  $("btnMuteVoice").classList.remove("hidden");
+  $("btnHangupVoice").classList.remove("hidden");
+  updateResolverVoiceTimer();
+  clearInterval(resolverVoice.durationTimer);
+  resolverVoice.durationTimer = setInterval(updateResolverVoiceTimer, 1000);
   try { if (stateCache) renderTickets(); } catch {}
+}
+
+function playResolverRingbackBurst() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const contexts = resolverVoice.ringbackContexts;
+    const context = new AudioContext();
+    contexts.add(context);
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.22, context.currentTime + 0.03);
+    gain.gain.setValueAtTime(0.22, context.currentTime + 0.72);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.85);
+    gain.connect(context.destination);
+    [440, 480].forEach((frequency) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime);
+      oscillator.stop(context.currentTime + 0.85);
+    });
+    setTimeout(() => {
+      contexts.delete(context);
+      context.close().catch(() => null);
+    }, 1_100);
+  } catch (error) {
+    console.warn("No se pudo reproducir el tono de llamada", error);
+  }
+}
+
+function startResolverRingback() {
+  if (resolverVoice.ringbackInterval) return;
+  playResolverRingbackBurst();
+  resolverVoice.ringbackInterval = setInterval(playResolverRingbackBurst, 3_000);
+}
+
+function stopResolverRingback() {
+  clearInterval(resolverVoice.ringbackInterval);
+  resolverVoice.ringbackInterval = null;
+  resolverVoice.ringbackContexts.forEach((context) => {
+    try { context.close().catch(() => null); } catch {}
+  });
+  resolverVoice.ringbackContexts.clear();
+}
+
+async function reportResolverVoiceConnected() {
+  if (!resolverVoice.ticketId || !resolverVoice.sessionId || !user?.id || resolverVoice.connectedReported) return;
+  resolverVoice.connectedReported = true;
+
+  try {
+    const data = await api(
+      `/resolver/tickets/${resolverVoice.ticketId}/voice/sessions/${encodeURIComponent(resolverVoice.sessionId)}/connected`,
+      {
+        method: "POST",
+        body: JSON.stringify({ resolver_user_id: user.id })
+      }
+    );
+    if (String(data.voice_session?.status || "").toUpperCase() === "CONNECTED") {
+      markResolverVoiceConnected();
+    }
+  } catch (error) {
+    resolverVoice.connectedReported = false;
+    console.warn("No se pudo confirmar la entrada del resolutor al canal", error);
+  }
+}
+
+async function stopResolverVoice(options = {}) {
+  if (resolverVoice.cleanupPromise) return resolverVoice.cleanupPromise;
+  const {
+    notifyBackend = true,
+    reason = "HANGUP",
+    finalStatus = "ended",
+    message = "Llamada segura finalizada"
+  } = options;
+
+  // Guard previo para evitar reentrada si JsSIP emite "ended" al hacer terminate().
+  resolverVoice.cleanupPromise = Promise.resolve();
+  const cleanupTask = (async () => {
+    clearResolverVoiceTimers();
+    stopResolverRingback();
+    stopResolverMedia();
+    try { resolverVoice.call?.terminate?.(); } catch {}
+    try { resolverVoice.ua?.stop?.(); } catch {}
+    resolverVoice.ua = null;
+    resolverVoice.call = null;
+    if (notifyBackend) {
+      try { await notifyResolverVoiceEnded(reason); }
+      catch (error) { console.warn("El backend no confirmó el cierre de la llamada", error); }
+    }
+    resolverVoice.status = finalStatus;
+    resolverVoice.statusMessage = message;
+    $("resolverVoiceTitle").textContent = message;
+    $("resolverVoiceMessage").textContent = "El caso continúa disponible en tu bandeja.";
+    $("btnRejectVoice").classList.add("hidden");
+    $("btnAnswerVoice").classList.add("hidden");
+    $("btnMuteVoice").classList.add("hidden");
+    $("btnHangupVoice").classList.add("hidden");
+    toast(message);
+    setTimeout(() => {
+      if (resolverVoice.status === finalStatus) hideResolverVoiceOverlay();
+    }, 1800);
+    try { if (stateCache) renderTickets(); } catch {}
+  })();
+  resolverVoice.cleanupPromise = cleanupTask;
+
+  return cleanupTask;
+}
+
+function toggleResolverVoiceMute() {
+  const connection = resolverVoice.peerConnection || resolverVoice.call?.connection;
+  const tracks = (connection?.getSenders?.() || [])
+    .map((sender) => sender.track)
+    .filter((track) => track?.kind === "audio");
+  if (!tracks.length) return;
+  resolverVoice.muted = !resolverVoice.muted;
+  tracks.forEach((track) => { track.enabled = !resolverVoice.muted; });
+  $("btnMuteVoice").textContent = resolverVoice.muted ? "🎙️ Activar" : "🎙️ Silenciar";
+}
+
+async function pollResolverVoiceStatus() {
+  if (!resolverVoice.ticketId || !resolverVoice.sessionId || !user?.id) return;
+  try {
+    const data = await api(
+      `/resolver/tickets/${resolverVoice.ticketId}/voice/sessions/${encodeURIComponent(resolverVoice.sessionId)}/status?resolver_user_id=${encodeURIComponent(user.id)}`
+    );
+    const status = String(data.voice_session?.status || "").toUpperCase();
+    if (status === "CONNECTED" && resolverVoice.status !== "connected") {
+      markResolverVoiceConnected();
+    } else if (["ENDED", "FAILED", "REJECTED", "NO_ANSWER", "EXPIRED"].includes(status)) {
+      await stopResolverVoice({
+        notifyBackend: false,
+        reason: `REMOTE_${status}`,
+        finalStatus: status === "REJECTED" ? "rejected" : status === "NO_ANSWER" ? "no_answer" : status === "FAILED" ? "failed" : "ended",
+        message: status === "REJECTED" ? "Llamada rechazada" : status === "NO_ANSWER" ? "Llamada sin respuesta" : "Llamada finalizada"
+      });
+    }
+  } catch (error) {
+    console.warn("No fue posible consultar el estado de llamada", error);
+  }
+}
+
+function startResolverVoiceStatusPolling() {
+  clearInterval(resolverVoice.statusPollTimer);
+  resolverVoice.statusPollTimer = setInterval(pollResolverVoiceStatus, 1500);
 }
 
 async function connectResolverVoice(voiceSession, options = {}) {
@@ -701,7 +945,17 @@ async function connectResolverVoice(voiceSession, options = {}) {
   resolverVoice.ticketId = options.ticketId || resolverVoice.ticketId || voiceSession?.ticket_id || null;
   resolverVoice.sessionId = nextSessionId;
   resolverVoice.session = voiceSession;
+  resolverVoice.cleanupPromise = null;
+  resolverVoice.backendFinalized = false;
+  resolverVoice.connectedReported = false;
+  resolverVoice.direction = options.direction || resolverVoice.direction || "incoming";
   setResolverVoiceStatus("Entrando a llamada segura...", "connecting");
+  $("resolverVoiceTitle").textContent = "Conectando llamada…";
+  $("resolverVoiceMessage").textContent = "Estamos preparando el canal de audio seguro.";
+  $("btnRejectVoice").classList.add("hidden");
+  $("btnAnswerVoice").classList.add("hidden");
+  $("btnHangupVoice").classList.remove("hidden");
+  $("resolverVoiceOverlay").classList.remove("hidden");
 
   await ensureResolverJsSIPLoaded();
 
@@ -728,7 +982,16 @@ async function connectResolverVoice(voiceSession, options = {}) {
   resolverVoice.session = voiceSession;
 
   ua.on("connected", () => setResolverVoiceStatus("Audio seguro conectado. Registrando llamada...", "registering"));
-  ua.on("disconnected", () => setResolverVoiceStatus("Audio desconectado. Puedes reintentar o colgar.", "disconnected"));
+  ua.on("disconnected", () => {
+    if (!RESOLVER_VOICE_TERMINAL.has(resolverVoice.status)) {
+      void stopResolverVoice({
+        notifyBackend: true,
+        reason: "WEBRTC_DISCONNECTED",
+        finalStatus: "failed",
+        message: "La llamada se desconectó"
+      });
+    }
+  });
 
   ua.on("registered", () => {
     setResolverVoiceStatus("Entrando al canal de voz seguro...", "calling");
@@ -738,31 +1001,55 @@ async function connectResolverVoice(voiceSession, options = {}) {
       pcConfig: { iceServers: voiceSession?.ice_servers || [] },
       eventHandlers: {
         progress: () => setResolverVoiceStatus("Llamando... esperando que el vecino entre a la llamada.", "ringing"),
-        confirmed: () => setResolverVoiceStatus("✅ En llamada segura. Ya puedes hablar con el vecino.", "connected"),
-        ended: () => stopResolverVoice(),
+        confirmed: () => {
+          // El anexo ya entró al bridge, pero esperamos la confirmación del
+          // backend antes de presentar la llamada como conectada.
+          setResolverVoiceStatus("Esperando confirmación del canal de voz…", "ringing");
+          void reportResolverVoiceConnected();
+        },
+        ended: () => {
+          void stopResolverVoice({ notifyBackend: true, reason: "REMOTE_ENDED" });
+        },
         failed: (e) => {
           console.error("WA-Center resolver call failed", e);
-          setResolverVoiceStatus(`Llamada fallida (${e.cause || "sin detalle"})`, "failed");
+          void stopResolverVoice({
+            notifyBackend: true,
+            reason: String(e?.cause || "WEBRTC_FAILED").toUpperCase(),
+            finalStatus: "failed",
+            message: "No fue posible conectar la llamada"
+          });
         }
       }
     });
     resolverVoice.call = call;
-    call.connection.addEventListener("track", (event) => {
-      let audio = $("resolverRemoteAudio");
-      if (!audio) {
-        audio = document.createElement("audio");
-        audio.id = "resolverRemoteAudio";
-        audio.autoplay = true;
-        audio.playsInline = true;
-        document.body.appendChild(audio);
-      }
-      audio.srcObject = event.streams[0];
-    });
+    const attachConnection = (connection) => {
+      if (!connection) return;
+      resolverVoice.peerConnection = connection;
+      connection.addEventListener("track", (event) => {
+        let audio = $("resolverRemoteAudio");
+        if (!audio) {
+          audio = document.createElement("audio");
+          audio.id = "resolverRemoteAudio";
+          audio.autoplay = true;
+          audio.playsInline = true;
+          document.body.appendChild(audio);
+        }
+        audio.srcObject = event.streams[0];
+      });
+    };
+    attachConnection(call.connection);
+    call.on?.("peerconnection", (event) => attachConnection(event?.peerconnection));
   });
   ua.on("registrationFailed", (e) => {
     console.error("WA-Center resolver registration failed", e);
-    setResolverVoiceStatus(`Registro WebRTC fallido (${e.cause || "sin detalle"})`, "failed");
+    void stopResolverVoice({
+      notifyBackend: true,
+      reason: "REGISTRATION_FAILED",
+      finalStatus: "failed",
+      message: "No fue posible conectar la llamada"
+    });
   });
+  startResolverVoiceStatusPolling();
   ua.start();
 }
 
@@ -775,25 +1062,74 @@ async function requestSecureCall(ticketId) {
     });
     const waSession = data.voice_session?.wa_center_session_id || data.voice_session?.id || "";
     toast("Llamada segura solicitada al vecino. Entrando al canal de audio...");
+    const ticket = findTicket(ticketId) || { id: ticketId };
+    showResolverVoiceOverlay(ticket, data.voice_session, "outgoing");
+    startResolverRingback();
     await connectResolverVoice(data.voice_session, { ticketId, direction: "outgoing" });
     await loadState();
   } catch (err) {
+    if (resolverVoice.sessionId) {
+      await stopResolverVoice({
+        notifyBackend: true,
+        reason: "REQUEST_FAILED",
+        finalStatus: "failed",
+        message: "No fue posible conectar la llamada"
+      });
+    }
     toast(err.message || "No se pudo solicitar llamada segura");
   }
 }
 
 async function answerNeighborVoice(ticketId, sessionId = "latest") {
   if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  stopResolverRingback();
   try {
     toast("Atendiendo llamada segura del vecino...");
+    await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/accept`, {
+      method: "POST",
+      body: JSON.stringify({ resolver_user_id: user.id })
+    });
     const data = await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/join`, {
       method: "POST",
       body: JSON.stringify({ resolver_user_id: user.id })
     });
+    const ticket = findTicket(ticketId) || { id: ticketId };
+    showResolverVoiceOverlay(ticket, data.voice_session, "connecting");
     await connectResolverVoice(data.voice_session, { ticketId, direction: "incoming" });
     await loadState();
   } catch (err) {
+    if (resolverVoice.sessionId) {
+      await stopResolverVoice({
+        notifyBackend: true,
+        reason: "ANSWER_FAILED",
+        finalStatus: "failed",
+        message: "No fue posible atender la llamada"
+      });
+    }
     toast(err.message || "No se pudo atender la llamada segura");
+  }
+}
+
+async function rejectNeighborVoice(ticketId, sessionId = "latest") {
+  if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  try {
+    await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/reject`, {
+      method: "POST",
+      body: JSON.stringify({
+        resolver_user_id: user.id,
+        reason: "REJECTED_BY_RESOLVER"
+      })
+    });
+    resolverVoice.backendFinalized = true;
+    await stopResolverVoice({
+      notifyBackend: false,
+      reason: "REJECTED_BY_RESOLVER",
+      finalStatus: "rejected",
+      message: "Llamada rechazada"
+    });
+    await loadState();
+  } catch (err) {
+    toast(err.message || "No fue posible rechazar la llamada");
   }
 }
 
@@ -1342,6 +1678,27 @@ async function notifyIncomingVoiceCalls(tickets) {
   toast(`📞 Llamada entrante del vecino · ${ticket.citizen_name || "Vecino"}`);
 }
 
+function syncIncomingVoiceOverlay(tickets) {
+  if (!Array.isArray(tickets) || !user) return;
+  if (["connecting", "calling", "ringing", "connected"].includes(resolverVoice.status) &&
+      resolverVoice.direction !== "incoming") return;
+
+  const ticket = tickets.find(t => isAssignedToMe(t) && isIncomingNeighborVoice(t));
+  if (!ticket) {
+    if (resolverVoice.direction === "incoming" && resolverVoice.status === "ringing" && !resolverVoice.call) {
+      resolverVoice.status = "ended";
+      stopResolverRingback();
+      hideResolverVoiceOverlay();
+    }
+    return;
+  }
+
+  const session = activeVoiceSessionForTicket(ticket);
+  const nextKey = resolverVoiceSessionKey(session);
+  if (nextKey && nextKey === resolverVoice.sessionId && !$("resolverVoiceOverlay").classList.contains("hidden")) return;
+  showResolverVoiceOverlay(ticket, session, "incoming");
+}
+
 async function notifyNewAssignedTickets(tickets) {
   if (!Array.isArray(tickets) || !user) return;
   const assigned = tickets.filter(t => isTicketAssignedOrPendingForMe(t) && !TERMINAL_STATES.includes(t.state));
@@ -1396,6 +1753,7 @@ async function loadState() {
     }
     await notifyNewAssignedTickets(data.tickets || []);
     await notifyIncomingVoiceCalls(data.tickets || []);
+    syncIncomingVoiceOverlay(data.tickets || []);
     renderTickets();
   } catch (err) {
     toast(err.message);
@@ -1522,6 +1880,20 @@ function init() {
   $("btnOpenGoogleMaps").addEventListener("click", () => openExternalNavigation("google"));
   $("btnOpenAppleMaps").addEventListener("click", () => openExternalNavigation("apple"));
   $("btnOpenWaze").addEventListener("click", () => openExternalNavigation("waze"));
+  $("btnAnswerVoice").addEventListener("click", () => {
+    if (resolverVoice.ticketId && resolverVoice.sessionId) {
+      answerNeighborVoice(resolverVoice.ticketId, resolverVoice.sessionId);
+    }
+  });
+  $("btnRejectVoice").addEventListener("click", () => {
+    if (resolverVoice.ticketId && resolverVoice.sessionId) {
+      rejectNeighborVoice(resolverVoice.ticketId, resolverVoice.sessionId);
+    }
+  });
+  $("btnMuteVoice").addEventListener("click", toggleResolverVoiceMute);
+  $("btnHangupVoice").addEventListener("click", () => {
+    void stopResolverVoice({ notifyBackend: true, reason: "HANGUP" });
+  });
 
   document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
     activeTab = tab.dataset.tab;
