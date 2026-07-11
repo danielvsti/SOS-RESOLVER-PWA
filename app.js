@@ -1,5 +1,6 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
+const RESOLVER_TOKEN_KEY = "sos_resolver_session_token";
 const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
 const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 3000);
 const GPS_HEARTBEAT_MS = Number(SOS_CONFIG.RESOLVER_GPS_HEARTBEAT_MS || 30000);
@@ -73,10 +74,12 @@ function toast(message) {
 }
 
 async function api(path, options = {}) {
+  const token = localStorage.getItem(RESOLVER_TOKEN_KEY) || "";
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {})
     }
   });
@@ -347,6 +350,7 @@ async function logout() {
   knownAssignedTicketIds = new Set();
 
   localStorage.removeItem("resolver_user");
+  localStorage.removeItem(RESOLVER_TOKEN_KEY);
   localStorage.removeItem("resolver_status");
   localStorage.removeItem("resolver_known_assigned_ticket_ids");
 
@@ -1808,14 +1812,30 @@ function saveSettingsFromPanel() {
 
 async function login() {
   const phone = $("phoneInput").value.trim();
+  const code = $("otpInput").value.trim();
   $("loginMsg").textContent = "";
   if (!phone) {
     $("loginMsg").textContent = "Ingresa un teléfono.";
     return;
   }
   try {
-    const resp = await api("/resolver/auth/login", { method: "POST", body: JSON.stringify({ phone }) });
+    const resp = await api("/resolver/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        phone,
+        code: code || undefined,
+        channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined
+      })
+    });
+    if (resp.requires_verification) {
+      $("loginMsg").textContent = resp.demo_code
+        ? `Código demo: ${resp.demo_code}`
+        : `Código enviado por ${resp.otp_channel || "SMS"}.`;
+      $("otpInput").focus();
+      return;
+    }
     if (resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol RESOLVER");
+    localStorage.setItem(RESOLVER_TOKEN_KEY, resp.token);
     user = resp.user;
     localStorage.setItem("resolver_user", JSON.stringify(user));
     showMain();
@@ -1898,7 +1918,7 @@ function init() {
   $("settingsTestNotification")?.addEventListener("click", testResolverNotification);
   $("settingsLogout")?.addEventListener("click", logout);
 
-  if (user) {
+  if (user && localStorage.getItem(RESOLVER_TOKEN_KEY)) {
     showMain();
     loadState();
     if (currentStatus !== "OFFLINE") {
@@ -1906,6 +1926,9 @@ function init() {
       startGpsHeartbeat();
     }
     startPolling();
+  } else if (user) {
+    user = null;
+    localStorage.removeItem("resolver_user");
   }
 }
 
