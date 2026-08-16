@@ -486,3 +486,362 @@ button:active{ transform:scale(.97); }
 @media (prefers-reduced-motion: reduce){
   *{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; }
 }
+
+
+/* ==========================================================================
+   REDISEÑO UI/UX v12 — Compactación de cabecera operativa + fix zoom táctil
+   Motivo: el bloque Disponible/Ocupado/Salir de turno ocupaba demasiada
+   altura de pantalla, empujando la lista de tickets fuera del "above the
+   fold". Se compacta a un control segmentado de una sola fila y se ajusta
+   el gesto de doble-tap para que la app se sienta nativa (sin zoom parcial
+   que deje contenido fuera de encuadre). 100% CSS, sin tocar IDs ni app.js.
+   ========================================================================== */
+
+html, body{
+  touch-action:manipulation; /* evita el zoom por doble-tap en toda la app */
+}
+/* El mapa Leaflet sí necesita sus propios gestos (pan/zoom táctil) */
+.route-map, #ticketMap, #routeMap{
+  touch-action:auto;
+}
+
+/* Cabecera de estado: perfil + pastilla en una tarjeta más baja */
+.status-card{
+  padding:14px 16px;
+  margin-bottom:10px;
+}
+.status-card h2{ margin:2px 0; }
+
+/* Controles Disponible / Ocupado / Salir de turno:
+   de 3 botones apilados (~230px) a un control segmentado de una fila (~52px) */
+.controls-grid{
+  display:grid !important;
+  grid-template-columns:1fr 1fr 1fr !important;
+  gap:6px;
+  margin-bottom:10px;
+  background:#e2e8f0;
+  padding:5px;
+  border-radius:16px;
+}
+.control{
+  min-height:44px;
+  padding:8px 4px;
+  font-size:13px;
+  line-height:1.15;
+  border-radius:12px;
+  box-shadow:none;
+}
+.control.available{ background:linear-gradient(180deg,#22c55e,#15803d); }
+.control.busy{ background:linear-gradient(180deg,#fbbf24,#d97706); color:#1c1300; }
+.control.offline{ background:linear-gradient(180deg,#64748b,#334155); }
+
+/* Tarjeta de GPS: una sola línea compacta, detalle secundario en menor tamaño */
+.card.compact{
+  padding:12px 14px;
+  margin-bottom:10px;
+}
+.card.compact #gpsText{
+  font-size:13px;
+  color:#475569;
+  margin:2px 0 0;
+}
+.card.compact .secondary.small{
+  min-height:38px;
+  padding:0 12px;
+  font-size:12px;
+}
+
+/* Tabs y lista de tickets suben antes en la pantalla */
+.tabs{ margin-bottom:10px; }
+
+@media (max-width:620px){
+  .controls-grid{ grid-template-columns:1fr 1fr 1fr !important; }
+  .control{ font-size:12px; padding:8px 3px; }
+}
+
+/* QUELTU UI continuity — cabecera y dock operacional persistentes. */
+:root {
+  --resolver-topbar-height: calc(84px + var(--rz-safe-top));
+  --rz-safe-top: env(safe-area-inset-top, 0px);
+  --rz-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.topbar {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  right: 0;
+  left: 0;
+  min-height: var(--resolver-topbar-height);
+}
+
+.app-shell > main {
+  padding-top: calc(var(--resolver-topbar-height) + 16px);
+}
+
+.resolver-action-dock {
+  position: fixed;
+  z-index: 40;
+  right: 0;
+  bottom: 0;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100%, 860px);
+  padding: 5px 8px calc(5px + var(--rz-safe-bottom));
+  transform: translateX(-50%);
+  border-top: 1px solid #dbe3ef;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, .14);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.resolver-action-dock button {
+  display: grid;
+  min-width: 0;
+  min-height: 54px;
+  padding: 4px 2px;
+  place-items: center;
+  gap: 1px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--rz-ink);
+  box-shadow: none;
+}
+
+.resolver-action-dock button:active { background: #eef2f7; }
+.resolver-action-dock button span { font-size: 21px; line-height: 1; }
+.resolver-action-dock button strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.resolver-dock-visible .app-shell > main {
+  padding-bottom: calc(78px + var(--rz-safe-bottom));
+}
+
+html.resolver-dock-visible .ticket-card .action-title,
+html.resolver-dock-visible .ticket-card .field-action {
+  display: none;
+}
+
+@media (max-width: 420px) {
+  :root { --resolver-topbar-height: calc(76px + var(--rz-safe-top)); }
+  .app-shell > main { padding-top: calc(var(--resolver-topbar-height) + 12px); }
+  .resolver-action-dock button strong { font-size: 9px; }
+}
+
+/* Seguridad operacional MINING: PNR + matriz HSE 5x5. */
+.hse-action {
+  min-height: 50px;
+  border: 1px solid #f59e0b;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fff8df, #ffedb0);
+  color: #78350f;
+  font-weight: 900;
+  box-shadow: 0 10px 22px rgba(245, 158, 11, .16);
+}
+.hse-panel-card {
+  width: min(920px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 24px;
+  overflow-y: auto;
+}
+.hse-panel-head { padding-right: 36px; }
+.hse-panel-head h2 { margin: 4px 0 8px; }
+.hse-section {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid #dbe3ef;
+  border-radius: 20px;
+  background: #f8fafc;
+}
+.hse-section h3 { margin: 0 0 6px; }
+.hse-section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.hse-pnr-list,
+.hse-risk-history { display: grid; gap: 10px; }
+.hse-pnr-item,
+.hse-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #d8e2ef;
+  border-radius: 15px;
+  background: #fff;
+}
+.hse-pnr-item > div,
+.hse-history-item { min-width: 0; }
+.hse-pnr-item strong,
+.hse-pnr-item span,
+.hse-history-item strong,
+.hse-history-item span,
+.hse-history-item small { display: block; }
+.hse-pnr-item span,
+.hse-history-item span,
+.hse-history-item small { margin-top: 3px; color: #64748b; }
+.hse-pnr-item p { margin: 7px 0 0; color: #475569; }
+.hse-risk-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.hse-risk-grid label { display: grid; gap: 6px; font-weight: 800; }
+.hse-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #93c5fd;
+  border-radius: 14px;
+  background: #eff6ff;
+}
+.hse-suggestion strong,
+.hse-suggestion span { display: block; }
+.hse-suggestion span { margin-top: 3px; color: #475569; }
+.hse-risk-result {
+  margin: 14px 0;
+  padding: 14px;
+  border-radius: 14px;
+  font-size: 20px;
+  font-weight: 950;
+  text-align: center;
+}
+.level-low { border-left: 5px solid #16a34a; background: #ecfdf3; color: #166534; }
+.level-moderate { border-left: 5px solid #eab308; background: #fefce8; color: #854d0e; }
+.level-high { border-left: 5px solid #f97316; background: #fff7ed; color: #9a3412; }
+.level-critical { border-left: 5px solid #dc2626; background: #fef2f2; color: #991b1b; }
+.hse-history-item { display: grid; justify-content: stretch; }
+
+@media (max-width: 620px) {
+  .hse-panel-card { padding: 18px 14px; }
+  .hse-section { padding: 14px; }
+  .hse-risk-grid { grid-template-columns: 1fr; }
+  .hse-pnr-item,
+  .hse-suggestion { align-items: stretch; flex-direction: column; }
+}
+
+/* Portal web de Supervisor HSE: misma plataforma, sesión y Centro de Control;
+   sin controles de turno ni funciones del profesional de terreno. */
+.supervisor-status-card {
+  align-items: center;
+  border-left-color: #ef4444;
+}
+.supervisor-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.supervisor-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  align-items: end;
+  gap: 18px;
+  margin-top: 16px;
+}
+.supervisor-intro h2,
+.supervisor-intro p { margin: 4px 0 0; }
+.supervisor-filter {
+  display: grid;
+  gap: 7px;
+  font-weight: 900;
+}
+.supervisor-closure-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.supervisor-closure-card {
+  padding: 20px;
+  border: 1px solid #dbe3ef;
+  border-left: 6px solid #f59e0b;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, .08);
+}
+.supervisor-closure-card.status-approved { border-left-color: #16a34a; }
+.supervisor-closure-card.status-rejected { border-left-color: #dc2626; }
+.supervisor-closure-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.supervisor-closure-head h3,
+.supervisor-closure-head p { margin: 3px 0 0; }
+.supervisor-status-badge {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 950;
+}
+.status-approved .supervisor-status-badge { background: #ecfdf3; color: #166534; }
+.status-rejected .supervisor-status-badge { background: #fef2f2; color: #991b1b; }
+.supervisor-closure-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+.supervisor-closure-facts div,
+.supervisor-summary {
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.supervisor-closure-facts dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.supervisor-closure-facts dd { margin: 4px 0 0; font-weight: 850; }
+.supervisor-summary { margin-top: 10px; }
+.supervisor-summary p { margin: 6px 0 0; white-space: pre-wrap; }
+.supervisor-decision-notes {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  font-weight: 900;
+}
+.supervisor-decision-notes textarea { min-height: 92px; }
+.supervisor-decision-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+.supervisor-empty { grid-column: 1 / -1; text-align: center; }
+.supervisor-empty p { color: #64748b; }
+.supervisor-empty.error { border-color: #fecaca; color: #991b1b; }
+
+@media (max-width: 720px) {
+  .supervisor-intro,
+  .supervisor-closure-facts,
+  .supervisor-decision-actions { grid-template-columns: 1fr; }
+  .supervisor-header-actions { justify-content: stretch; }
+  .supervisor-header-actions button { flex: 1 1 auto; }
+  .supervisor-closure-head { display: grid; }
+  .supervisor-status-badge { justify-self: start; }
+}

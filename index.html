@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#0f172a" />
-  <title>Alerta Comunal Resolutor</title>
+  <meta name="theme-color" content="#151A1D" />
+  <title>QUELTU Resolutor</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=12.7-hse-supervisor" />
+  <link rel="stylesheet" href="queltu-brand.css?v=20260716-2" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Alerta Comunal Resolutor">
+  <meta name="apple-mobile-web-app-title" content="QUELTU Resolutor">
   <meta name="format-detection" content="telephone=no">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
@@ -23,10 +24,10 @@
   <div id="appShell" class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="logo.svg" alt="Alerta Comunal" />
+        <img src="queltu-symbol.png" alt="QUELTU" />
         <div>
-          <strong>Alerta Comunal</strong>
-          <span>Resolutor</span>
+          <strong>QUELTU</strong>
+          <span id="brandSubtitle">Respuesta en terreno · Resolutor</span>
         </div>
       </div>
       <button id="btnSettings" class="ghost hidden" type="button">⚙️</button>
@@ -34,8 +35,8 @@
 
     <main>
       <section id="loginView" class="card login-card">
-        <h1>Ingreso Resolutor</h1>
-        <p>Ingresa con el teléfono registrado por la central municipal.</p>
+        <h1 id="loginTitle">Ingreso Resolutor</h1>
+        <p id="loginDescription">Ingresa con el teléfono registrado por el Centro de Control.</p>
         <label for="phoneInput">Teléfono</label>
         <input id="phoneInput" type="tel" placeholder="+569XXXXXXXX" autocomplete="tel" />
         <label for="otpInput">Código OTP</label>
@@ -82,7 +83,55 @@
 
         <section id="ticketsList" class="tickets-list"></section>
       </section>
+
+      <section id="supervisorView" class="hidden">
+        <section class="status-card supervisor-status-card">
+          <div>
+            <span class="eyebrow">Seguridad operacional</span>
+            <h2 id="supervisorName">Supervisor HSE</h2>
+            <p id="supervisorCenter">—</p>
+          </div>
+          <div class="supervisor-header-actions">
+            <button id="btnRefreshSupervisor" class="secondary small" type="button">Actualizar</button>
+            <button id="btnSupervisorLogout" class="secondary small danger-soft" type="button">Cerrar sesión</button>
+          </div>
+        </section>
+
+        <section class="card supervisor-intro">
+          <div>
+            <span class="eyebrow">Portal Supervisor HSE</span>
+            <h2>Solicitudes de cierre</h2>
+            <p>Revisa la investigación, el riesgo residual y la trazabilidad registrada por el Profesional HSE antes de aprobar o devolver un caso.</p>
+          </div>
+          <label class="supervisor-filter">Estado
+            <select id="supervisorStatusFilter">
+              <option value="REQUESTED">Pendientes</option>
+              <option value="ALL">Todas</option>
+              <option value="APPROVED">Aprobadas</option>
+              <option value="REJECTED">Devueltas</option>
+            </select>
+          </label>
+        </section>
+
+        <div id="supervisorClosureStatus" class="notice hidden"></div>
+        <section id="supervisorClosureList" class="tickets-list supervisor-closure-list"></section>
+      </section>
     </main>
+
+    <nav id="resolverActionDock" class="resolver-action-dock hidden" aria-label="Comunicación del caso activo">
+      <button id="dockFieldText" type="button" aria-label="Agregar antecedente escrito">
+        <span aria-hidden="true">📝</span><strong>Antecedente</strong>
+      </button>
+      <button id="dockFieldAudio" type="button" aria-label="Grabar audio de terreno">
+        <span aria-hidden="true">🎙️</span><strong>Audio</strong>
+      </button>
+      <button id="dockFieldVideo" type="button" aria-label="Agregar video de evidencia">
+        <span aria-hidden="true">📹</span><strong>Video</strong>
+      </button>
+      <button id="dockSecureCall" type="button" aria-label="Iniciar llamada segura al vecino">
+        <span aria-hidden="true">📞</span><strong>Llamar</strong>
+      </button>
+    </nav>
   </div>
 
   <div id="ticketModal" class="modal hidden">
@@ -143,6 +192,80 @@
         <button id="btnOpenAppleMaps" class="secondary" type="button">Apple Maps</button>
         <button id="btnOpenWaze" class="secondary" type="button">Waze</button>
       </div>
+    </div>
+  </div>
+
+  <div id="hsePanel" class="modal hidden">
+    <div class="modal-card hse-panel-card">
+      <button id="btnCloseHsePanel" class="modal-close" type="button">×</button>
+      <div class="hse-panel-head">
+        <span class="eyebrow">Seguridad operacional</span>
+        <h2>Evaluación HSE del caso</h2>
+        <p id="hsePanelSubtitle" class="muted">Evalúa el riesgo y consulta los PNR aplicables al área del trabajador.</p>
+      </div>
+
+      <section class="hse-section">
+        <div class="hse-section-title">
+          <div>
+            <h3>Procedimientos, normas y reglas</h3>
+            <p id="hsePnrArea" class="muted tiny">Área: —</p>
+          </div>
+        </div>
+        <div id="hsePnrList" class="hse-pnr-list"></div>
+        <p id="hsePnrEmpty" class="muted hidden">No hay PNR publicados para esta área.</p>
+      </section>
+
+      <section class="hse-section">
+        <div class="hse-section-title">
+          <div>
+            <h3>Matriz de riesgo 5 × 5</h3>
+            <p class="muted tiny">La estimación profesional queda trazada. La sugerencia estadística es solo una ayuda y requiere muestra suficiente.</p>
+          </div>
+        </div>
+        <div id="hseFrequencySuggestion" class="hse-suggestion hidden"></div>
+        <div class="hse-risk-grid">
+          <label>Momento de evaluación
+            <select id="hseRiskPhase">
+              <option value="INITIAL">Riesgo inicial</option>
+              <option value="RESIDUAL">Riesgo residual</option>
+            </select>
+          </label>
+          <label>Gravedad
+            <select id="hseSeverity">
+              <option value="1">1 · Leve</option>
+              <option value="2">2 · Menor</option>
+              <option value="3">3 · Seria</option>
+              <option value="4">4 · Grave</option>
+              <option value="5">5 · Crítica</option>
+            </select>
+          </label>
+          <label>Frecuencia
+            <select id="hseFrequency">
+              <option value="1">1 · Rara</option>
+              <option value="2">2 · Poco probable</option>
+              <option value="3">3 · Posible</option>
+              <option value="4">4 · Probable</option>
+              <option value="5">5 · Frecuente</option>
+            </select>
+          </label>
+          <label>Origen de frecuencia
+            <select id="hseFrequencySource">
+              <option value="PROFESSIONAL_ESTIMATE">Estimación profesional</option>
+              <option value="SYSTEM_SUGGESTION">Sugerencia del sistema</option>
+            </select>
+          </label>
+        </div>
+        <div id="hseRiskResult" class="hse-risk-result level-low">Riesgo 1 · Bajo</div>
+        <label for="hseRiskNotes">Fundamento / observaciones</label>
+        <textarea id="hseRiskNotes" placeholder="Describe la condición observada, controles presentes y fundamento de la evaluación..."></textarea>
+        <button id="btnSaveHseRisk" class="primary" type="button">Guardar evaluación de riesgo</button>
+      </section>
+
+      <section class="hse-section">
+        <h3>Historial de evaluaciones</h3>
+        <div id="hseRiskHistory" class="hse-risk-history"></div>
+        <p id="hseRiskHistoryEmpty" class="muted hidden">Todavía no existen evaluaciones para este ticket.</p>
+      </section>
     </div>
   </div>
 
@@ -219,6 +342,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=12.7-hse-supervisor"></script>
 </body>
 </html>

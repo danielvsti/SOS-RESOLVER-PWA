@@ -1,0 +1,37 @@
+:root {
+  --queltu-ink: #151a1d;
+  --queltu-red: #d94742;
+  --queltu-red-light: #ef5650;
+  --queltu-red-dark: #b9282f;
+  --queltu-paper: #f4f5f8;
+}
+
+body { background: var(--queltu-paper); }
+.topbar { background: var(--queltu-ink); border-bottom: 3px solid var(--queltu-red); }
+.topbar .brand img {
+  width: 58px; height: 58px; box-sizing: border-box; object-fit: contain;
+  padding: 4px; border-radius: 17px; background: #fff;
+}
+.topbar .brand strong { letter-spacing: .12em; }
+.topbar .brand span { color: #dce2e6; }
+.primary {
+  background: linear-gradient(180deg, var(--queltu-red-light) 0%, var(--queltu-red) 48%, var(--queltu-red-dark) 100%);
+  box-shadow: 0 12px 26px rgba(185, 40, 47, .24), inset 0 1px rgba(255, 255, 255, .2);
+}
+.primary:hover { background: linear-gradient(180deg, #f35e58 0%, #d94742 48%, #a91f28 100%); }
+.secondary {
+  background: linear-gradient(180deg, #f8fafc 0%, #e7ecf4 100%);
+  box-shadow: inset 0 1px #fff, 0 7px 16px rgba(15, 23, 42, .08);
+}
+.field-action {
+  border: 1px solid #d9e6f8;
+  background: linear-gradient(180deg, #f8fbff 0%, #e7f0fc 100%);
+  box-shadow: inset 0 1px #fff, 0 8px 18px rgba(37, 99, 235, .08);
+}
+.danger-soft { background: linear-gradient(180deg, #fff7f7 0%, #fee2e2 100%); }
+.resolver-voice-actions .danger { background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%); }
+.status-card { border-top: 3px solid var(--queltu-red); }
+
+@media (max-width: 420px) {
+  .topbar .brand img { width: 50px; height: 50px; border-radius: 15px; }
+}

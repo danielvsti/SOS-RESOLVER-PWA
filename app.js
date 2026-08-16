@@ -1,6 +1,13 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
-const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
+const API = SOS_CONFIG.API_BASE || "https://api.queltu.com";
 const RESOLVER_TOKEN_KEY = "sos_resolver_session_token";
+const HSE_SUPERVISOR_TOKEN_KEY = "queltu_hse_supervisor_session_token";
+const HSE_SUPERVISOR_USER_KEY = "queltu_hse_supervisor_user";
+const APP_MODE = new URLSearchParams(window.location.search).get("mode") || "field";
+const SUPERVISOR_MODE = APP_MODE.toLowerCase() === "supervisor";
+const SESSION_TOKEN_KEY = SUPERVISOR_MODE ? HSE_SUPERVISOR_TOKEN_KEY : RESOLVER_TOKEN_KEY;
+const USER_STORAGE_KEY = SUPERVISOR_MODE ? HSE_SUPERVISOR_USER_KEY : "resolver_user";
+const HSE_SUPERVISOR_ROLES = ["ADMIN", "SUPER_ADMIN"];
 const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
 const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 10000);
 const GPS_HEARTBEAT_MS = Number(SOS_CONFIG.RESOLVER_GPS_HEARTBEAT_MS || 30000);
@@ -12,7 +19,7 @@ const TERMINAL_STATES = ["CLOSED", "CANCELLED", "RESOLVED"];
 
 const $ = (id) => document.getElementById(id);
 
-let user = JSON.parse(localStorage.getItem("resolver_user") || "null");
+let user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || "null");
 let currentStatus = localStorage.getItem("resolver_status") || "OFFLINE";
 let currentPosition = null;
 let activeTab = "assigned";
@@ -27,6 +34,9 @@ let routeMarkers = [];
 let activeRouteTicket = null;
 let activeFieldTicketId = null;
 let activeFieldMode = null;
+let activeHseTicketId = null;
+let activeHseData = null;
+let resolverActionDockTicketId = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let audioStream = null;
@@ -63,7 +73,7 @@ function toast(message) {
 }
 
 async function api(path, options = {}) {
-  const token = localStorage.getItem(RESOLVER_TOKEN_KEY) || "";
+  const token = localStorage.getItem(SESSION_TOKEN_KEY) || "";
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
@@ -87,6 +97,14 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
   }[ch]));
+}
+
+function isMiningHseExperience() {
+  return String(stateCache?.platform_settings?.vertical || "").toUpperCase() === "MINING";
+}
+
+function visibleTerm(key, fallback) {
+  return stateCache?.platform_settings?.terminology?.[key] || fallback;
 }
 
 
@@ -319,6 +337,16 @@ function stopGpsHeartbeat() {
 async function logout() {
   if (!user) return showLogin();
 
+  if (SUPERVISOR_MODE) {
+    if (!confirm("¿Cerrar la sesión del Supervisor HSE?")) return;
+    user = null;
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+    showLogin();
+    toast("Sesión de supervisión cerrada.");
+    return;
+  }
+
   const ok = confirm("¿Cerrar sesión y cambiar de resolutor? Se marcará este usuario fuera de turno en la central.");
   if (!ok) return;
 
@@ -338,8 +366,8 @@ async function logout() {
   currentStatus = "OFFLINE";
   knownAssignedTicketIds = new Set();
 
-  localStorage.removeItem("resolver_user");
-  localStorage.removeItem(RESOLVER_TOKEN_KEY);
+  localStorage.removeItem(USER_STORAGE_KEY);
+  localStorage.removeItem(SESSION_TOKEN_KEY);
   localStorage.removeItem("resolver_status");
   localStorage.removeItem("resolver_known_assigned_ticket_ids");
 
@@ -353,13 +381,25 @@ async function logout() {
 
 function showLogin() {
   $("mainView")?.classList.add("hidden");
+  $("supervisorView")?.classList.add("hidden");
   $("loginView")?.classList.remove("hidden");
   $("btnSettings")?.classList.add("hidden");
+  updateResolverActionDock([]);
   updateStatusPill("OFFLINE");
   if ($("phoneInput")) $("phoneInput").value = "";
   if ($("loginMsg")) $("loginMsg").textContent = "";
   if ($("ticketsList")) $("ticketsList").innerHTML = "";
   if ($("gpsText")) $("gpsText").textContent = "Sin ubicación reportada";
+}
+
+function configureExperienceMode() {
+  if (!SUPERVISOR_MODE) return;
+  document.title = "QUELTU Supervisor HSE";
+  $("brandSubtitle").textContent = "Supervisión HSE · Seguridad operacional";
+  $("loginTitle").textContent = "Ingreso Supervisor HSE";
+  $("loginDescription").textContent = "Ingresa con el teléfono de Administrador o Supervisor autorizado por el Centro de Control.";
+  $("phoneInput").placeholder = "+55XXXXXXXXXXX";
+  $("btnLogin").textContent = "Ingresar a Supervisión HSE";
 }
 
 async function reconcileStatus() {
@@ -538,11 +578,32 @@ function saveKnownVoiceSessionIds() {
   localStorage.setItem("resolver_known_voice_session_ids", JSON.stringify([...knownVoiceSessionIds].slice(-100)));
 }
 
+function updateResolverActionDock(tickets = []) {
+  const dock = $("resolverActionDock");
+  const activeTicket = (Array.isArray(tickets) ? tickets : []).find(
+    (ticket) => isAssignedToMe(ticket) && !TERMINAL_STATES.includes(String(ticket.state || "").toUpperCase())
+  );
+  resolverActionDockTicketId = activeTicket?.id || null;
+  const visible = Boolean(dock && resolverActionDockTicketId && user);
+  dock?.classList.toggle("hidden", !visible);
+  document.documentElement.classList.toggle("resolver-dock-visible", visible);
+  if (dock && activeTicket) {
+    dock.setAttribute("aria-label", `Comunicación del caso ${String(activeTicket.id).slice(0, 8).toUpperCase()}`);
+  }
+}
+
+function runResolverDockAction(mode) {
+  if (!resolverActionDockTicketId) return toast("No hay un caso activo asignado.");
+  if (mode === "call") return requestSecureCall(resolverActionDockTicketId);
+  openFieldPanel(resolverActionDockTicketId, mode);
+}
+
 function renderTickets() {
   const list = $("ticketsList");
   const tickets = stateCache?.tickets || [];
   const assigned = tickets.filter((t) => isAssignedToMe(t) || isPendingForMe(t));
   const available = tickets.filter((t) => isAvailableTicket(t));
+  updateResolverActionDock(tickets);
 
   $("assignedCount").textContent = assigned.length;
   $("availableCount").textContent = available.length;
@@ -591,6 +652,9 @@ function ticketCard(t) {
     }
     if (["ON_SITE", "EN_ROUTE", "ACCEPTED_BY_RESOLVER", "ASSIGNED"].includes(t.state)) {
       actions += `<button class="control available full" data-action="resolve" data-id="${t.id}">Resolver caso</button>`;
+    }
+    if (isMiningHseExperience()) {
+      actions += `<button class="hse-action full" data-action="hse" data-id="${t.id}">🦺 PNR y evaluación de riesgo</button>`;
     }
   }
 
@@ -807,6 +871,7 @@ async function handleTicketAction(action, id, sessionId = null) {
     if (action === "field-text") return openFieldPanel(t.id, "text");
     if (action === "field-audio") return openFieldPanel(t.id, "audio");
     if (action === "field-video") return openFieldPanel(t.id, "video");
+    if (action === "hse") return openHsePanel(t);
     if (action === "secure-call") return requestSecureCall(t.id);
     if (action === "hangup-voice") return stopResolverVoice();
     if (action === "answer-voice") {
@@ -860,6 +925,7 @@ function showTicketDetail(t) {
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
       ${isIncomingNeighborVoice(t) ? `<button class="primary full incoming-call-button" type="button" id="btnDetailAnswerCall">☎️ Atender llamada del vecino</button>` : ""}
+      ${isAssignedToMe(t) && isMiningHseExperience() ? `<button class="hse-action full" type="button" id="btnDetailHse">🦺 PNR y evaluación de riesgo</button>` : ""}
       ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Iniciar llamada al vecino</button>` : ""}
     </div>
   `;
@@ -901,6 +967,8 @@ function showTicketDetail(t) {
     };
     const callBtn = $("btnDetailCall");
     if (callBtn) callBtn.onclick = () => { requestSecureCall(t.id); };
+    const hseBtn = $("btnDetailHse");
+    if (hseBtn) hseBtn.onclick = () => { closeTicketModal(); openHsePanel(t); };
   }, 0);
 }
 
@@ -909,6 +977,148 @@ function closeTicketModal() {
   if (ticketMap) {
     ticketMap.remove();
     ticketMap = null;
+  }
+}
+
+function hseRiskLevel(score) {
+  if (score >= 17) return { code: "critical", label: "Crítico" };
+  if (score >= 10) return { code: "high", label: "Alto" };
+  if (score >= 5) return { code: "moderate", label: "Moderado" };
+  return { code: "low", label: "Bajo" };
+}
+
+function updateHseRiskPreview() {
+  const severity = Number($("hseSeverity")?.value || 1);
+  const frequency = Number($("hseFrequency")?.value || 1);
+  const score = severity * frequency;
+  const level = hseRiskLevel(score);
+  const result = $("hseRiskResult");
+  if (!result) return;
+  result.className = `hse-risk-result level-${level.code}`;
+  result.textContent = `Riesgo ${score} · ${level.label}`;
+}
+
+async function openHsePnrDocument(documentId) {
+  const document = (activeHseData?.pnr_documents || []).find((item) => String(item.id) === String(documentId));
+  if (document?.document_url) {
+    window.open(document.document_url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const popup = window.open("about:blank", "_blank");
+  try {
+    const token = localStorage.getItem(SESSION_TOKEN_KEY) || "";
+    const response = await fetch(`${API}/mobile/safety/pnr/${encodeURIComponent(documentId)}/content`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!response.ok) throw new Error(`No fue posible abrir el PNR (HTTP ${response.status})`);
+    const blobUrl = URL.createObjectURL(await response.blob());
+    if (popup) popup.location.href = blobUrl;
+    else {
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.target = "_blank";
+      anchor.rel = "noopener";
+      anchor.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+  } catch (error) {
+    if (popup) popup.close();
+    toast(error.message || "No fue posible abrir el PNR");
+  }
+}
+
+function renderHsePanel(data) {
+  const ticket = data?.ticket || {};
+  const documents = Array.isArray(data?.pnr_documents) ? data.pnr_documents : [];
+  const assessments = Array.isArray(data?.risk_assessments) ? data.risk_assessments : [];
+  const suggestion = data?.frequency_suggestion || {};
+  $("hsePanelSubtitle").textContent = `Caso #${String(ticket.id || activeHseTicketId || "").slice(0, 8).toUpperCase()} · registra la evaluación del ${visibleTerm("responder", "Profesional HSE")}.`;
+  $("hsePnrArea").textContent = `Área del trabajador: ${ticket.work_area || "sin área asignada"}`;
+  $("hsePnrEmpty").classList.toggle("hidden", documents.length > 0);
+  $("hsePnrList").innerHTML = documents.map((item) => `
+    <article class="hse-pnr-item">
+      <div>
+        <strong>${escapeHtml(item.code)} · ${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.document_type || "PNR")} · versión ${escapeHtml(item.version || "—")}${item.work_area ? ` · ${escapeHtml(item.work_area)}` : " · General"}</span>
+        ${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ""}
+      </div>
+      <button class="secondary small" type="button" data-hse-pnr-id="${escapeHtml(item.id)}">Abrir</button>
+    </article>`).join("");
+  $("hsePnrList").querySelectorAll("[data-hse-pnr-id]").forEach((button) => {
+    button.onclick = () => openHsePnrDocument(button.dataset.hsePnrId);
+  });
+
+  const suggestionBox = $("hseFrequencySuggestion");
+  suggestionBox.classList.toggle("hidden", !suggestion.available);
+  suggestionBox.innerHTML = suggestion.available
+    ? `<div><strong>Sugerencia estadística: frecuencia ${escapeHtml(suggestion.value)}</strong><span>${escapeHtml(suggestion.sample_size)} casos del mismo tipo en ${escapeHtml(suggestion.period_days)} días.</span></div><button id="btnUseHseSuggestion" class="secondary small" type="button">Usar sugerencia</button>`
+    : `<div><strong>Sin sugerencia estadística todavía</strong><span>Muestra actual: ${escapeHtml(suggestion.sample_size || 0)} de 5 casos mínimos. Usa estimación profesional.</span></div>`;
+  if (!suggestion.available) suggestionBox.classList.remove("hidden");
+  $("btnUseHseSuggestion")?.addEventListener("click", () => {
+    $("hseFrequency").value = String(suggestion.value);
+    $("hseFrequencySource").value = "SYSTEM_SUGGESTION";
+    updateHseRiskPreview();
+  });
+
+  $("hseRiskHistoryEmpty").classList.toggle("hidden", assessments.length > 0);
+  $("hseRiskHistory").innerHTML = assessments.map((item) => {
+    const level = hseRiskLevel(Number(item.score || 1));
+    return `<article class="hse-history-item level-${level.code}"><strong>${item.phase === "RESIDUAL" ? "Residual" : "Inicial"}: ${escapeHtml(item.score)} · ${escapeHtml(level.label)}</strong><span>Gravedad ${escapeHtml(item.severity)} × frecuencia ${escapeHtml(item.frequency)} · ${escapeHtml(item.assessed_by_name || "Profesional HSE")}</span><small>${escapeHtml(formatResolverActivityTime(item.assessed_at))}${item.notes ? ` · ${escapeHtml(item.notes)}` : ""}</small></article>`;
+  }).join("");
+  updateHseRiskPreview();
+}
+
+async function openHsePanel(ticket) {
+  if (!ticket?.id || !isMiningHseExperience()) return;
+  activeHseTicketId = ticket.id;
+  activeHseData = null;
+  $("hsePnrList").innerHTML = `<div class="empty">Cargando PNR y evaluación...</div>`;
+  $("hseRiskHistory").innerHTML = "";
+  $("hseRiskNotes").value = "";
+  $("hseRiskPhase").value = "INITIAL";
+  $("hseSeverity").value = "1";
+  $("hseFrequency").value = "1";
+  $("hseFrequencySource").value = "PROFESSIONAL_ESTIMATE";
+  $("hsePanel").classList.remove("hidden");
+  updateHseRiskPreview();
+  try {
+    activeHseData = await api(`/resolver/tickets/${ticket.id}/safety`);
+    renderHsePanel(activeHseData);
+  } catch (error) {
+    toast(error.message || "No fue posible cargar Seguridad Operacional");
+    closeHsePanel();
+  }
+}
+
+function closeHsePanel() {
+  $("hsePanel")?.classList.add("hidden");
+  activeHseTicketId = null;
+  activeHseData = null;
+}
+
+async function saveHseRisk() {
+  if (!activeHseTicketId) return;
+  const button = $("btnSaveHseRisk");
+  button.disabled = true;
+  try {
+    await api(`/resolver/tickets/${activeHseTicketId}/safety/risk`, {
+      method: "POST",
+      body: JSON.stringify({
+        phase: $("hseRiskPhase").value,
+        severity: Number($("hseSeverity").value),
+        frequency: Number($("hseFrequency").value),
+        frequency_source: $("hseFrequencySource").value,
+        notes: $("hseRiskNotes").value.trim() || null
+      })
+    });
+    toast("Evaluación HSE guardada");
+    activeHseData = await api(`/resolver/tickets/${activeHseTicketId}/safety`);
+    $("hseRiskNotes").value = "";
+    renderHsePanel(activeHseData);
+  } catch (error) {
+    toast(error.message || "No fue posible guardar la evaluación");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1380,7 +1590,7 @@ async function loadState() {
     const data = await api(`/resolver/${user.id}/state`);
     stateCache = data;
     user = data.resolver;
-    localStorage.setItem("resolver_user", JSON.stringify(user));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     $("resolverName").textContent = user.full_name || "Resolutor";
     $("resolverCenter").textContent = user.control_center_name || user.control_center_code || "Centro de control";
     currentStatus = data.location?.status || data.reconciliation?.new_status || currentStatus || "OFFLINE";
@@ -1452,6 +1662,145 @@ function saveSettingsFromPanel() {
   setResolverSetting(SETTINGS_KEYS.autoRoute, $("settingsAutoRoute")?.checked ?? false);
 }
 
+function supervisorRequestStatusLabel(status) {
+  return ({
+    REQUESTED: "Pendiente de revisión",
+    APPROVED: "Cierre aprobado",
+    REJECTED: "Devuelto al Profesional HSE"
+  })[String(status || "").toUpperCase()] || status || "—";
+}
+
+function supervisorRequestCard(item) {
+  const status = String(item.status || "").toUpperCase();
+  const pending = status === "REQUESTED";
+  const risk = item.residual_risk_score != null
+    ? `Riesgo residual ${escapeHtml(item.residual_risk_score)} · ${escapeHtml(item.residual_risk_level || "sin nivel")}`
+    : "Sin evaluación de riesgo residual";
+  const investigation = [
+    item.investigation_notes,
+    item.immediate_actions,
+    Array.isArray(item.root_causes) ? item.root_causes.join(" · ") : item.root_causes,
+    item.recommendations
+  ].filter(Boolean);
+
+  return `
+    <article class="supervisor-closure-card status-${escapeHtml(status.toLowerCase())}" data-closure-id="${escapeHtml(item.id)}">
+      <div class="supervisor-closure-head">
+        <div>
+          <span class="eyebrow">Caso #${escapeHtml(String(item.ticket_id || "").slice(0, 8).toUpperCase())}</span>
+          <h3>${escapeHtml(item.ticket_title || item.alert_type || "Caso HSE")}</h3>
+          <p>${escapeHtml(item.event_sector_name || "Área no informada")}</p>
+        </div>
+        <span class="supervisor-status-badge">${escapeHtml(supervisorRequestStatusLabel(status))}</span>
+      </div>
+      <dl class="supervisor-closure-facts">
+        <div><dt>Profesional HSE</dt><dd>${escapeHtml(item.resolver_name || item.requested_by_name || "—")}</dd></div>
+        <div><dt>Solicitado</dt><dd>${escapeHtml(formatResolverActivityTime(item.requested_at))}</dd></div>
+        <div><dt>Investigación</dt><dd>${escapeHtml(item.investigation_status || "—")}</dd></div>
+        <div><dt>Evaluación</dt><dd>${risk}</dd></div>
+      </dl>
+      ${item.request_summary ? `<section class="supervisor-summary"><strong>Resumen de cierre</strong><p>${escapeHtml(item.request_summary)}</p></section>` : ""}
+      ${investigation.length ? `<section class="supervisor-summary"><strong>Antecedentes de investigación</strong>${investigation.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : ""}
+      ${item.decision_notes ? `<section class="supervisor-summary"><strong>Observación de supervisión</strong><p>${escapeHtml(item.decision_notes)}</p></section>` : ""}
+      ${pending ? `
+        <label class="supervisor-decision-notes">Observaciones de supervisión
+          <textarea data-supervisor-notes placeholder="Obligatorio al devolver el caso; opcional al aprobar."></textarea>
+        </label>
+        <div class="supervisor-decision-actions">
+          <button class="secondary danger-soft" type="button" data-supervisor-decision="REJECTED">Devolver al Profesional HSE</button>
+          <button class="primary" type="button" data-supervisor-decision="APPROVED">Aprobar cierre</button>
+        </div>` : ""}
+    </article>`;
+}
+
+function renderSupervisorRequests(items = []) {
+  const list = $("supervisorClosureList");
+  if (!list) return;
+  if (!items.length) {
+    list.innerHTML = `<section class="card supervisor-empty"><strong>No hay solicitudes en este estado.</strong><p>Cuando un Profesional HSE solicite el cierre de un caso aparecerá aquí.</p></section>`;
+    return;
+  }
+  list.innerHTML = items.map(supervisorRequestCard).join("");
+  list.querySelectorAll("[data-supervisor-decision]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const card = button.closest("[data-closure-id]");
+      decideSupervisorClosure(card?.dataset.closureId, button.dataset.supervisorDecision, card);
+    });
+  });
+}
+
+async function loadSupervisorRequests() {
+  const list = $("supervisorClosureList");
+  const status = $("supervisorStatusFilter")?.value || "REQUESTED";
+  if (list) list.innerHTML = `<section class="card supervisor-empty"><strong>Cargando solicitudes HSE...</strong></section>`;
+  try {
+    const data = await api(`/hse/supervisor/closure-requests?status=${encodeURIComponent(status)}`);
+    renderSupervisorRequests(data.closure_requests || []);
+    const notice = $("supervisorClosureStatus");
+    if (notice) {
+      notice.classList.toggle("hidden", status !== "REQUESTED" || (data.closure_requests || []).length === 0);
+      notice.innerHTML = status === "REQUESTED" && (data.closure_requests || []).length
+        ? `<strong>${data.closure_requests.length} solicitud${data.closure_requests.length === 1 ? "" : "es"} pendiente${data.closure_requests.length === 1 ? "" : "s"}</strong><p>La aprobación resuelve el ticket; la devolución reactiva la investigación.</p>`
+        : "";
+    }
+  } catch (error) {
+    if (list) list.innerHTML = `<section class="card supervisor-empty error"><strong>No fue posible cargar las solicitudes.</strong><p>${escapeHtml(error.message)}</p></section>`;
+  }
+}
+
+async function decideSupervisorClosure(id, decision, card) {
+  if (!id || !["APPROVED", "REJECTED"].includes(decision)) return;
+  const notes = card?.querySelector("[data-supervisor-notes]")?.value.trim() || "";
+  if (decision === "REJECTED" && !notes) {
+    toast("Indica el motivo para devolver el caso.");
+    card?.querySelector("[data-supervisor-notes]")?.focus();
+    return;
+  }
+  const action = decision === "APPROVED" ? "aprobar el cierre" : "devolver el caso al Profesional HSE";
+  if (!confirm(`¿Confirmas ${action}?`)) return;
+  card?.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  try {
+    await api(`/hse/supervisor/closure-requests/${encodeURIComponent(id)}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision, decision_notes: notes || null })
+    });
+    toast(decision === "APPROVED" ? "Cierre aprobado" : "Caso devuelto al Profesional HSE");
+    await loadSupervisorRequests();
+  } catch (error) {
+    toast(error.message || "No fue posible registrar la decisión");
+    card?.querySelectorAll("button").forEach((button) => { button.disabled = false; });
+  }
+}
+
+function showSupervisor() {
+  $("loginView")?.classList.add("hidden");
+  $("mainView")?.classList.add("hidden");
+  $("supervisorView")?.classList.remove("hidden");
+  $("btnSettings")?.classList.add("hidden");
+  updateResolverActionDock([]);
+  $("supervisorName").textContent = user?.full_name || "Supervisor HSE";
+  $("supervisorCenter").textContent = user?.control_center_name || user?.control_center_code || "Centro de Control";
+}
+
+async function restoreSupervisorSession() {
+  try {
+    const session = await api("/auth/session");
+    if (!HSE_SUPERVISOR_ROLES.includes(String(session.user?.role || "").toUpperCase())) {
+      throw new Error("La sesión no tiene permisos de Supervisor HSE");
+    }
+    user = session.user;
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    showSupervisor();
+    await loadSupervisorRequests();
+  } catch (error) {
+    user = null;
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+    showLogin();
+    if (error?.message && !/inválida|expirada/i.test(error.message)) toast(error.message);
+  }
+}
+
 async function login() {
   const phone = $("phoneInput").value.trim();
   const code = $("otpInput").value.trim();
@@ -1461,10 +1810,11 @@ async function login() {
     return;
   }
   try {
-    const resp = await api("/resolver/auth/login", {
+    const resp = await api(SUPERVISOR_MODE ? "/auth/panel-login" : "/resolver/auth/login", {
       method: "POST",
       body: JSON.stringify({
         phone,
+        ...(SUPERVISOR_MODE ? { panel_type: "RESOLVER" } : {}),
         code: code || undefined,
         channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined
       })
@@ -1476,10 +1826,17 @@ async function login() {
       $("otpInput").focus();
       return;
     }
-    if (resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol RESOLVER");
-    localStorage.setItem(RESOLVER_TOKEN_KEY, resp.token);
+    const role = String(resp.user?.role || "").toUpperCase();
+    if (SUPERVISOR_MODE && !HSE_SUPERVISOR_ROLES.includes(role)) throw new Error("Este usuario no tiene permisos de Supervisor HSE");
+    if (!SUPERVISOR_MODE && role !== "RESOLVER") throw new Error("Este usuario no tiene rol de Profesional HSE / Resolutor");
+    localStorage.setItem(SESSION_TOKEN_KEY, resp.token);
     user = resp.user;
-    localStorage.setItem("resolver_user", JSON.stringify(user));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    if (SUPERVISOR_MODE) {
+      showSupervisor();
+      await loadSupervisorRequests();
+      return;
+    }
     showMain();
     await updateGps("AVAILABLE").catch((err) => toast(err.message));
     startGpsHeartbeat();
@@ -1493,6 +1850,7 @@ async function login() {
 
 function showMain() {
   $("loginView").classList.add("hidden");
+  $("supervisorView")?.classList.add("hidden");
   $("mainView").classList.remove("hidden");
   $("btnSettings").classList.remove("hidden");
   $("resolverName").textContent = user?.full_name || "Resolutor";
@@ -1506,7 +1864,11 @@ function startPolling() {
 }
 
 function init() {
+  configureExperienceMode();
   $("btnLogin").addEventListener("click", login);
+  $("otpInput")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") login();
+  });
   $("btnAvailable").addEventListener("click", () => setStatus("AVAILABLE"));
   $("btnBusy").addEventListener("click", () => setStatus("BUSY"));
   $("btnOffline").addEventListener("click", () => setStatus("OFFLINE"));
@@ -1522,6 +1884,22 @@ function init() {
   $("btnOpenGoogleMaps").addEventListener("click", () => openExternalNavigation("google"));
   $("btnOpenAppleMaps").addEventListener("click", () => openExternalNavigation("apple"));
   $("btnOpenWaze").addEventListener("click", () => openExternalNavigation("waze"));
+  $("dockFieldText")?.addEventListener("click", () => runResolverDockAction("text"));
+  $("dockFieldAudio")?.addEventListener("click", () => runResolverDockAction("audio"));
+  $("dockFieldVideo")?.addEventListener("click", () => runResolverDockAction("video"));
+  $("dockSecureCall")?.addEventListener("click", () => runResolverDockAction("call"));
+  $("btnCloseHsePanel")?.addEventListener("click", closeHsePanel);
+  $("btnSaveHseRisk")?.addEventListener("click", saveHseRisk);
+  $("hseSeverity")?.addEventListener("change", updateHseRiskPreview);
+  $("hseFrequency")?.addEventListener("change", () => {
+    if ($("hseFrequencySource")?.value === "SYSTEM_SUGGESTION" && Number(activeHseData?.frequency_suggestion?.value) !== Number($("hseFrequency").value)) {
+      $("hseFrequencySource").value = "PROFESSIONAL_ESTIMATE";
+    }
+    updateHseRiskPreview();
+  });
+  $("hsePanel")?.addEventListener("click", (event) => {
+    if (event.target === $("hsePanel")) closeHsePanel();
+  });
 
   document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
     activeTab = tab.dataset.tab;
@@ -1545,8 +1923,13 @@ function init() {
   });
   $("settingsTestNotification")?.addEventListener("click", testResolverNotification);
   $("settingsLogout")?.addEventListener("click", logout);
+  $("btnRefreshSupervisor")?.addEventListener("click", loadSupervisorRequests);
+  $("btnSupervisorLogout")?.addEventListener("click", logout);
+  $("supervisorStatusFilter")?.addEventListener("change", loadSupervisorRequests);
 
-  if (user && localStorage.getItem(RESOLVER_TOKEN_KEY)) {
+  if (SUPERVISOR_MODE && user && localStorage.getItem(SESSION_TOKEN_KEY)) {
+    restoreSupervisorSession();
+  } else if (!SUPERVISOR_MODE && user && localStorage.getItem(SESSION_TOKEN_KEY)) {
     showMain();
     loadState();
     if (currentStatus !== "OFFLINE") {
@@ -1556,7 +1939,7 @@ function init() {
     startPolling();
   } else if (user) {
     user = null;
-    localStorage.removeItem("resolver_user");
+    localStorage.removeItem(USER_STORAGE_KEY);
   }
 }
 
