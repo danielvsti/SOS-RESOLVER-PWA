@@ -145,8 +145,50 @@
       </div>
     </div>
   </div>
-
-
+  <div id="hsePanel" class="modal hidden">
+    <div class="modal-card hse-panel-card">
+      <button id="btnCloseHsePanel" class="modal-close" type="button">×</button>
+      <div class="hse-panel-head">
+        <span class="eyebrow">Seguridad operacional</span>
+        <h2>Evaluación HSE del caso</h2>
+        <p id="hsePanelSubtitle" class="muted">Evalúa el riesgo y consulta los PNR aplicables al área del trabajador.</p>
+      </div>
+      <section class="hse-section">
+        <h3>Procedimientos, normas y reglas</h3>
+        <p id="hsePnrArea" class="muted tiny">Área: —</p>
+        <div id="hsePnrList" class="hse-pnr-list"></div>
+        <p id="hsePnrEmpty" class="muted hidden">No hay PNR publicados para esta área.</p>
+      </section>
+      <section class="hse-section">
+        <h3>Matriz de riesgo 5 × 5</h3>
+        <p class="muted tiny">La estimación profesional queda trazada. La sugerencia estadística requiere una muestra mínima.</p>
+        <div id="hseFrequencySuggestion" class="hse-suggestion hidden"></div>
+        <div class="hse-risk-grid">
+          <label>Momento de evaluación
+            <select id="hseRiskPhase"><option value="INITIAL">Riesgo inicial</option><option value="RESIDUAL">Riesgo residual</option></select>
+          </label>
+          <label>Gravedad
+            <select id="hseSeverity"><option value="1">1 · Leve</option><option value="2">2 · Menor</option><option value="3">3 · Seria</option><option value="4">4 · Grave</option><option value="5">5 · Crítica</option></select>
+          </label>
+          <label>Frecuencia
+            <select id="hseFrequency"><option value="1">1 · Rara</option><option value="2">2 · Poco probable</option><option value="3">3 · Posible</option><option value="4">4 · Probable</option><option value="5">5 · Frecuente</option></select>
+          </label>
+          <label>Origen de frecuencia
+            <select id="hseFrequencySource"><option value="PROFESSIONAL_ESTIMATE">Estimación profesional</option><option value="SYSTEM_SUGGESTION">Sugerencia del sistema</option></select>
+          </label>
+        </div>
+        <div id="hseRiskResult" class="hse-risk-result level-low">Riesgo 1 · Bajo</div>
+        <label for="hseRiskNotes">Fundamento / observaciones</label>
+        <textarea id="hseRiskNotes" placeholder="Describe la condición observada, controles presentes y fundamento de la evaluación..."></textarea>
+        <button id="btnSaveHseRisk" class="primary" type="button">Guardar evaluación de riesgo</button>
+      </section>
+      <section class="hse-section">
+        <h3>Historial de evaluaciones</h3>
+        <div id="hseRiskHistory" class="hse-risk-history"></div>
+        <p id="hseRiskHistoryEmpty" class="muted hidden">Todavía no existen evaluaciones para este ticket.</p>
+      </section>
+    </div>
+  </div>
 
   <div id="settingsPanel" class="modal hidden">
     <div class="modal-card settings-card">

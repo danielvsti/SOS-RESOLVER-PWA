@@ -1,5 +1,5 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
-const API = SOS_CONFIG.API_BASE || "https://sos.vsti.cl";
+const API = SOS_CONFIG.API_BASE || "https://api.queltu.com";
 const RESOLVER_TOKEN_KEY = "sos_resolver_session_token";
 const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
 const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 3000);
@@ -33,6 +33,8 @@ let audioStream = null;
 let recordingTimeout = null;
 let recordingTimerInterval = null;
 let recordingStartedAt = null;
+let activeHseTicketId = null;
+let activeHseData = null;
 let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
 let knownVoiceSessionIds = new Set(JSON.parse(localStorage.getItem("resolver_known_voice_session_ids") || "[]"));
 let lastNotificationAt = 0;
@@ -98,6 +100,14 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;"
   }[ch]));
+}
+
+function isMiningHseExperience() {
+  return String(stateCache?.platform_settings?.vertical || "").toUpperCase() === "MINING";
+}
+
+function visibleTerm(key, fallback) {
+  return stateCache?.platform_settings?.terminology?.[key] || fallback;
 }
 
 
@@ -602,6 +612,9 @@ function ticketCard(t) {
     }
     if (["ON_SITE", "EN_ROUTE", "ACCEPTED_BY_RESOLVER", "ASSIGNED"].includes(t.state)) {
       actions += `<button class="control available full" data-action="resolve" data-id="${t.id}">Resolver caso</button>`;
+    }
+    if (isMiningHseExperience()) {
+      actions += `<button class="hse-action full" data-action="hse" data-id="${t.id}">🦺 PNR y evaluación de riesgo</button>`;
     }
   }
 
@@ -1143,6 +1156,7 @@ async function handleTicketAction(action, id, sessionId = null) {
     if (action === "field-text") return openFieldPanel(t.id, "text");
     if (action === "field-audio") return openFieldPanel(t.id, "audio");
     if (action === "field-video") return openFieldPanel(t.id, "video");
+    if (action === "hse") return openHsePanel(t);
     if (action === "secure-call") return requestSecureCall(t.id);
     if (action === "hangup-voice") return stopResolverVoice();
     if (action === "answer-voice") {
@@ -1196,6 +1210,7 @@ function showTicketDetail(t) {
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
       ${isIncomingNeighborVoice(t) ? `<button class="primary full incoming-call-button" type="button" id="btnDetailAnswerCall">☎️ Atender llamada del vecino</button>` : ""}
+      ${isAssignedToMe(t) && isMiningHseExperience() ? `<button class="hse-action full" type="button" id="btnDetailHse">🦺 PNR y evaluación de riesgo</button>` : ""}
       ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Iniciar llamada al vecino</button>` : ""}
     </div>
   `;
@@ -1237,6 +1252,8 @@ function showTicketDetail(t) {
     };
     const callBtn = $("btnDetailCall");
     if (callBtn) callBtn.onclick = () => { requestSecureCall(t.id); };
+    const hseBtn = $("btnDetailHse");
+    if (hseBtn) hseBtn.onclick = () => { closeTicketModal(); openHsePanel(t); };
   }, 0);
 }
 
@@ -1245,6 +1262,137 @@ function closeTicketModal() {
   if (ticketMap) {
     ticketMap.remove();
     ticketMap = null;
+  }
+}
+
+function hseRiskLevel(score) {
+  if (score >= 17) return { code: "critical", label: "Crítico" };
+  if (score >= 10) return { code: "high", label: "Alto" };
+  if (score >= 5) return { code: "moderate", label: "Moderado" };
+  return { code: "low", label: "Bajo" };
+}
+
+function updateHseRiskPreview() {
+  const severity = Number($("hseSeverity")?.value || 1);
+  const frequency = Number($("hseFrequency")?.value || 1);
+  const score = severity * frequency;
+  const level = hseRiskLevel(score);
+  const result = $("hseRiskResult");
+  if (!result) return;
+  result.className = `hse-risk-result level-${level.code}`;
+  result.textContent = `Riesgo ${score} · ${level.label}`;
+}
+
+async function openHsePnrDocument(documentId) {
+  const pnrDocument = (activeHseData?.pnr_documents || []).find((item) => String(item.id) === String(documentId));
+  if (pnrDocument?.document_url) {
+    window.open(pnrDocument.document_url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const popup = window.open("about:blank", "_blank");
+  try {
+    const token = localStorage.getItem(RESOLVER_TOKEN_KEY) || "";
+    const response = await fetch(`${API}/mobile/safety/pnr/${encodeURIComponent(documentId)}/content`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!response.ok) throw new Error(`No fue posible abrir el PNR (HTTP ${response.status})`);
+    const blobUrl = URL.createObjectURL(await response.blob());
+    if (popup) popup.location.href = blobUrl;
+    else window.location.href = blobUrl;
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+  } catch (error) {
+    if (popup) popup.close();
+    toast(error.message || "No fue posible abrir el PNR");
+  }
+}
+
+function renderHsePanel(data) {
+  const ticket = data?.ticket || {};
+  const documents = Array.isArray(data?.pnr_documents) ? data.pnr_documents : [];
+  const assessments = Array.isArray(data?.risk_assessments) ? data.risk_assessments : [];
+  const suggestion = data?.frequency_suggestion || {};
+  $("hsePanelSubtitle").textContent = `Caso #${String(ticket.id || activeHseTicketId || "").slice(0, 8).toUpperCase()} · registra la evaluación del ${visibleTerm("responder", "Profesional HSE")}.`;
+  $("hsePnrArea").textContent = `Área del trabajador: ${ticket.work_area || "sin área asignada"}`;
+  $("hsePnrEmpty").classList.toggle("hidden", documents.length > 0);
+  $("hsePnrList").innerHTML = documents.map((item) => `
+    <article class="hse-pnr-item">
+      <div><strong>${escapeHtml(item.code)} · ${escapeHtml(item.title)}</strong><span>${escapeHtml(item.document_type || "PNR")} · versión ${escapeHtml(item.version || "—")}${item.work_area ? ` · ${escapeHtml(item.work_area)}` : " · General"}</span>${item.summary ? `<p>${escapeHtml(item.summary)}</p>` : ""}</div>
+      <button class="secondary small" type="button" data-hse-pnr-id="${escapeHtml(item.id)}">Abrir</button>
+    </article>`).join("");
+  $("hsePnrList").querySelectorAll("[data-hse-pnr-id]").forEach((button) => {
+    button.onclick = () => openHsePnrDocument(button.dataset.hsePnrId);
+  });
+
+  const suggestionBox = $("hseFrequencySuggestion");
+  suggestionBox.innerHTML = suggestion.available
+    ? `<div><strong>Sugerencia estadística: frecuencia ${escapeHtml(suggestion.value)}</strong><span>${escapeHtml(suggestion.sample_size)} casos del mismo tipo en ${escapeHtml(suggestion.period_days)} días.</span></div><button id="btnUseHseSuggestion" class="secondary small" type="button">Usar sugerencia</button>`
+    : `<div><strong>Sin sugerencia estadística todavía</strong><span>Muestra actual: ${escapeHtml(suggestion.sample_size || 0)} de 5 casos mínimos. Usa estimación profesional.</span></div>`;
+  suggestionBox.classList.remove("hidden");
+  $("btnUseHseSuggestion")?.addEventListener("click", () => {
+    $("hseFrequency").value = String(suggestion.value);
+    $("hseFrequencySource").value = "SYSTEM_SUGGESTION";
+    updateHseRiskPreview();
+  });
+
+  $("hseRiskHistoryEmpty").classList.toggle("hidden", assessments.length > 0);
+  $("hseRiskHistory").innerHTML = assessments.map((item) => {
+    const level = hseRiskLevel(Number(item.score || 1));
+    return `<article class="hse-history-item level-${level.code}"><strong>${item.phase === "RESIDUAL" ? "Residual" : "Inicial"}: ${escapeHtml(item.score)} · ${escapeHtml(level.label)}</strong><span>Gravedad ${escapeHtml(item.severity)} × frecuencia ${escapeHtml(item.frequency)} · ${escapeHtml(item.assessed_by_name || "Profesional HSE")}</span><small>${escapeHtml(formatResolverActivityTime(item.assessed_at))}${item.notes ? ` · ${escapeHtml(item.notes)}` : ""}</small></article>`;
+  }).join("");
+  updateHseRiskPreview();
+}
+
+async function openHsePanel(ticket) {
+  if (!ticket?.id || !isMiningHseExperience()) return;
+  activeHseTicketId = ticket.id;
+  activeHseData = null;
+  $("hsePnrList").innerHTML = `<div class="empty">Cargando PNR y evaluación...</div>`;
+  $("hseRiskHistory").innerHTML = "";
+  $("hseRiskNotes").value = "";
+  $("hseRiskPhase").value = "INITIAL";
+  $("hseSeverity").value = "1";
+  $("hseFrequency").value = "1";
+  $("hseFrequencySource").value = "PROFESSIONAL_ESTIMATE";
+  $("hsePanel").classList.remove("hidden");
+  updateHseRiskPreview();
+  try {
+    activeHseData = await api(`/resolver/tickets/${ticket.id}/safety`);
+    renderHsePanel(activeHseData);
+  } catch (error) {
+    toast(error.message || "No fue posible cargar Seguridad Operacional");
+    closeHsePanel();
+  }
+}
+
+function closeHsePanel() {
+  $("hsePanel")?.classList.add("hidden");
+  activeHseTicketId = null;
+  activeHseData = null;
+}
+
+async function saveHseRisk() {
+  if (!activeHseTicketId) return;
+  const button = $("btnSaveHseRisk");
+  button.disabled = true;
+  try {
+    await api(`/resolver/tickets/${activeHseTicketId}/safety/risk`, {
+      method: "POST",
+      body: JSON.stringify({
+        phase: $("hseRiskPhase").value,
+        severity: Number($("hseSeverity").value),
+        frequency: Number($("hseFrequency").value),
+        frequency_source: $("hseFrequencySource").value,
+        notes: $("hseRiskNotes").value.trim() || null
+      })
+    });
+    toast("Evaluación HSE guardada");
+    activeHseData = await api(`/resolver/tickets/${activeHseTicketId}/safety`);
+    $("hseRiskNotes").value = "";
+    renderHsePanel(activeHseData);
+  } catch (error) {
+    toast(error.message || "No fue posible guardar la evaluación");
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1880,6 +2028,18 @@ function init() {
   $("btnOpenGoogleMaps").addEventListener("click", () => openExternalNavigation("google"));
   $("btnOpenAppleMaps").addEventListener("click", () => openExternalNavigation("apple"));
   $("btnOpenWaze").addEventListener("click", () => openExternalNavigation("waze"));
+  $("btnCloseHsePanel")?.addEventListener("click", closeHsePanel);
+  $("btnSaveHseRisk")?.addEventListener("click", saveHseRisk);
+  $("hseSeverity")?.addEventListener("change", updateHseRiskPreview);
+  $("hseFrequency")?.addEventListener("change", () => {
+    if ($("hseFrequencySource")?.value === "SYSTEM_SUGGESTION" && Number(activeHseData?.frequency_suggestion?.value) !== Number($("hseFrequency").value)) {
+      $("hseFrequencySource").value = "PROFESSIONAL_ESTIMATE";
+    }
+    updateHseRiskPreview();
+  });
+  $("hsePanel")?.addEventListener("click", (event) => {
+    if (event.target === $("hsePanel")) closeHsePanel();
+  });
   $("btnAnswerVoice").addEventListener("click", () => {
     if (resolverVoice.ticketId && resolverVoice.sessionId) {
       answerNeighborVoice(resolverVoice.ticketId, resolverVoice.sessionId);
