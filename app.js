@@ -1,6 +1,13 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://api.queltu.com";
 const RESOLVER_TOKEN_KEY = "sos_resolver_session_token";
+const HSE_SUPERVISOR_TOKEN_KEY = "queltu_hse_supervisor_session_token";
+const HSE_SUPERVISOR_USER_KEY = "queltu_hse_supervisor_user";
+const APP_MODE = new URLSearchParams(window.location.search).get("mode") || "field";
+const SUPERVISOR_MODE = APP_MODE.toLowerCase() === "supervisor";
+const SESSION_TOKEN_KEY = SUPERVISOR_MODE ? HSE_SUPERVISOR_TOKEN_KEY : RESOLVER_TOKEN_KEY;
+const USER_STORAGE_KEY = SUPERVISOR_MODE ? HSE_SUPERVISOR_USER_KEY : "resolver_user";
+const HSE_SUPERVISOR_ROLES = ["ADMIN", "SUPER_ADMIN"];
 const GPS_TIMEOUT_MS = Number(SOS_CONFIG.RESOLVER_GPS_TIMEOUT_MS || 9000);
 const POLL_MS = Number(SOS_CONFIG.RESOLVER_POLL_MS || 3000);
 const GPS_HEARTBEAT_MS = Number(SOS_CONFIG.RESOLVER_GPS_HEARTBEAT_MS || 30000);
@@ -12,8 +19,8 @@ const TERMINAL_STATES = ["CLOSED", "CANCELLED", "RESOLVED"];
 
 const $ = (id) => document.getElementById(id);
 
-let user = JSON.parse(localStorage.getItem("resolver_user") || "null");
-let portalMode = localStorage.getItem("queltu_response_portal_mode") || "RESOLVER";
+let user = JSON.parse(localStorage.getItem(USER_STORAGE_KEY) || "null");
+let portalMode = SUPERVISOR_MODE ? "SUPERVISOR_HSE" : "RESOLVER";
 let currentStatus = localStorage.getItem("resolver_status") || "OFFLINE";
 let currentPosition = null;
 let activeTab = "assigned";
@@ -77,7 +84,7 @@ function toast(message) {
 }
 
 async function api(path, options = {}) {
-  const token = localStorage.getItem(RESOLVER_TOKEN_KEY) || "";
+  const token = localStorage.getItem(SESSION_TOKEN_KEY) || "";
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
@@ -369,12 +376,12 @@ async function logout() {
   currentStatus = "OFFLINE";
   knownAssignedTicketIds = new Set();
 
-  localStorage.removeItem("resolver_user");
-  localStorage.removeItem(RESOLVER_TOKEN_KEY);
+  localStorage.removeItem(USER_STORAGE_KEY);
+  localStorage.removeItem(SESSION_TOKEN_KEY);
   localStorage.removeItem("resolver_status");
   localStorage.removeItem("resolver_known_assigned_ticket_ids");
   localStorage.removeItem("queltu_response_portal_mode");
-  portalMode = "RESOLVER";
+  portalMode = SUPERVISOR_MODE ? "SUPERVISOR_HSE" : "RESOLVER";
 
   closeSettingsPanel();
   closeTicketModal();
@@ -1304,7 +1311,7 @@ async function openHsePnrDocument(documentId) {
   }
   const popup = window.open("about:blank", "_blank");
   try {
-    const token = localStorage.getItem(RESOLVER_TOKEN_KEY) || "";
+    const token = localStorage.getItem(SESSION_TOKEN_KEY) || "";
     const response = await fetch(`${API}/mobile/safety/pnr/${encodeURIComponent(documentId)}/content`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
@@ -2182,21 +2189,15 @@ async function login() {
     return;
   }
   try {
-    let resp;
-    try {
-      resp = await api("/resolver/auth/login", {
-        method: "POST",
-        body: JSON.stringify({ phone, code: code || undefined, channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined })
-      });
-      portalMode = "RESOLVER";
-    } catch (resolverError) {
-      if (![403, 404].includes(Number(resolverError.httpStatus))) throw resolverError;
-      resp = await api("/auth/panel-login", {
-        method: "POST",
-        body: JSON.stringify({ phone, panel_type: "CONTROL_CENTER", code: code || undefined, channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined })
-      });
-      portalMode = "SUPERVISOR_HSE";
-    }
+    const resp = await api(SUPERVISOR_MODE ? "/auth/panel-login" : "/resolver/auth/login", {
+      method: "POST",
+      body: JSON.stringify({
+        phone,
+        code: code || undefined,
+        channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined,
+        ...(SUPERVISOR_MODE ? { panel_type: "RESOLVER" } : {})
+      })
+    });
     if (resp.requires_verification) {
       $("loginMsg").textContent = resp.demo_code
         ? `Código demo: ${resp.demo_code}`
@@ -2204,11 +2205,11 @@ async function login() {
       $("otpInput").focus();
       return;
     }
-    if (portalMode === "RESOLVER" && resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol Profesional HSE");
-    if (portalMode === "SUPERVISOR_HSE" && !["OPERATOR", "ADMIN", "SUPER_ADMIN"].includes(resp.user.role)) throw new Error("Este usuario no tiene rol Supervisor HSE");
-    localStorage.setItem(RESOLVER_TOKEN_KEY, resp.token);
+    if (!SUPERVISOR_MODE && resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol Profesional HSE");
+    if (SUPERVISOR_MODE && !HSE_SUPERVISOR_ROLES.includes(resp.user.role)) throw new Error("Este usuario no tiene permisos de Supervisor HSE");
+    localStorage.setItem(SESSION_TOKEN_KEY, resp.token);
     user = resp.user;
-    localStorage.setItem("resolver_user", JSON.stringify(user));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     localStorage.setItem("queltu_response_portal_mode", portalMode);
     showMain();
     if (isSupervisorPortal()) {
@@ -2246,6 +2247,10 @@ function startPolling() {
 }
 
 function init() {
+  if (SUPERVISOR_MODE) {
+    $("loginTitle").textContent = "Ingreso Supervisor HSE";
+    $("loginSubtitle").textContent = "Revisa y decide solicitudes de cierre del Centro de Control asignado a tu cuenta.";
+  }
   $("btnLogin").addEventListener("click", login);
   $("btnAvailable").addEventListener("click", () => setStatus("AVAILABLE"));
   $("btnBusy").addEventListener("click", () => setStatus("BUSY"));
@@ -2319,7 +2324,7 @@ function init() {
   $("settingsLogout")?.addEventListener("click", logout);
   $("btnSupervisorLogout")?.addEventListener("click", logout);
 
-  if (user && localStorage.getItem(RESOLVER_TOKEN_KEY)) {
+  if (user && localStorage.getItem(SESSION_TOKEN_KEY)) {
     showMain();
     if (isSupervisorPortal()) {
       loadSupervisorClosures();
@@ -2333,7 +2338,7 @@ function init() {
     startPolling();
   } else if (user) {
     user = null;
-    localStorage.removeItem("resolver_user");
+    localStorage.removeItem(USER_STORAGE_KEY);
   }
 }
 
