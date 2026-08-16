@@ -537,6 +537,19 @@ button:active{ transform:scale(.97); }
 .hse-panel-head h2 { margin: 4px 0 8px; }
 .hse-section { margin-top: 18px; padding: 18px; border: 1px solid #dbe3ef; border-radius: 20px; background: #f8fafc; }
 .hse-section h3 { margin: 0 0 6px; }
+.hse-section > label { display: block; margin-top: 14px; font-weight: 800; color: #334155; }
+.hse-section > textarea, .hse-section > select { width: 100%; margin-top: 7px; }
+.hse-section > input { width: 100%; margin-top: 7px; }
+.hse-control-question { margin: 10px 0; padding: 12px; border-radius: 12px; background: #eef2f7; }
+.hse-closure-status { margin: 10px 0; padding: 12px 14px; border-radius: 14px; background: #e2e8f0; color: #334155; font-weight: 800; }
+.hse-closure-status.status-requested { background: #fef3c7; color: #92400e; }
+.hse-closure-status.status-approved { background: #dcfce7; color: #166534; }
+.hse-closure-status.status-rejected { background: #fee2e2; color: #991b1b; }
+.supervisor-intro { margin: 16px 0; }
+.supervisor-header-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.supervisor-intro h2 { margin: 0 0 6px; }
+.supervisor-intro p { margin: 0; color: #64748b; }
+.supervisor-closure-card .ticket-body p { margin: 7px 0; }
 .hse-pnr-list, .hse-risk-history { display: grid; gap: 10px; }
 .hse-pnr-item, .hse-history-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px; border: 1px solid #d8e2ef; border-radius: 15px; background: #fff; }
 .hse-pnr-item > div, .hse-history-item { min-width: 0; }

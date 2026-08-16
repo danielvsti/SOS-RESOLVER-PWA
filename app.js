@@ -13,6 +13,7 @@ const TERMINAL_STATES = ["CLOSED", "CANCELLED", "RESOLVED"];
 const $ = (id) => document.getElementById(id);
 
 let user = JSON.parse(localStorage.getItem("resolver_user") || "null");
+let portalMode = localStorage.getItem("queltu_response_portal_mode") || "RESOLVER";
 let currentStatus = localStorage.getItem("resolver_status") || "OFFLINE";
 let currentPosition = null;
 let activeTab = "assigned";
@@ -91,6 +92,7 @@ async function api(path, options = {}) {
   if (!res.ok || data.status === "error") {
     const err = new Error(data.message || `HTTP ${res.status}`);
     err.data = data;
+    err.httpStatus = res.status;
     throw err;
   }
   return data;
@@ -104,6 +106,10 @@ function escapeHtml(value) {
 
 function isMiningHseExperience() {
   return String(stateCache?.platform_settings?.vertical || "").toUpperCase() === "MINING";
+}
+
+function isSupervisorPortal() {
+  return portalMode === "SUPERVISOR_HSE";
 }
 
 function visibleTerm(key, fallback) {
@@ -340,7 +346,9 @@ function stopGpsHeartbeat() {
 async function logout() {
   if (!user) return showLogin();
 
-  const ok = confirm("¿Cerrar sesión y cambiar de resolutor? Se marcará este usuario fuera de turno en la central.");
+  const ok = confirm(isSupervisorPortal()
+    ? "¿Cerrar la sesión del portal Supervisor HSE?"
+    : "¿Cerrar sesión y cambiar de profesional? Se marcará este usuario fuera de turno en el Centro de Control.");
   if (!ok) return;
 
   const previousUserId = user.id;
@@ -348,7 +356,9 @@ async function logout() {
     stopGpsHeartbeat();
     clearInterval(pollTimer);
     pollTimer = null;
-    await api(`/resolvers/${previousUserId}/status/offline`, { method: "POST", body: JSON.stringify({ reason: "logout" }) });
+    if (!isSupervisorPortal()) {
+      await api(`/resolvers/${previousUserId}/status/offline`, { method: "POST", body: JSON.stringify({ reason: "logout" }) });
+    }
   } catch (err) {
     console.warn("logout offline failed", err.message);
   }
@@ -363,17 +373,20 @@ async function logout() {
   localStorage.removeItem(RESOLVER_TOKEN_KEY);
   localStorage.removeItem("resolver_status");
   localStorage.removeItem("resolver_known_assigned_ticket_ids");
+  localStorage.removeItem("queltu_response_portal_mode");
+  portalMode = "RESOLVER";
 
   closeSettingsPanel();
   closeTicketModal();
   closeFieldPanel();
   closeRoutePanel();
   showLogin();
-  toast("Sesión cerrada. Puedes ingresar con otro resolutor.");
+  toast("Sesión cerrada. Puedes ingresar con otro usuario.");
 }
 
 function showLogin() {
   $("mainView")?.classList.add("hidden");
+  $("supervisorView")?.classList.add("hidden");
   $("loginView")?.classList.remove("hidden");
   $("btnSettings")?.classList.add("hidden");
   updateStatusPill("OFFLINE");
@@ -610,11 +623,11 @@ function ticketCard(t) {
     if (t.state === "EN_ROUTE") {
       actions += `<button class="primary" data-action="on-site" data-id="${t.id}">Llegué al lugar</button>`;
     }
-    if (["ON_SITE", "EN_ROUTE", "ACCEPTED_BY_RESOLVER", "ASSIGNED"].includes(t.state)) {
+    if (!isMiningHseExperience() && ["ON_SITE", "EN_ROUTE", "ACCEPTED_BY_RESOLVER", "ASSIGNED"].includes(t.state)) {
       actions += `<button class="control available full" data-action="resolve" data-id="${t.id}">Resolver caso</button>`;
     }
     if (isMiningHseExperience()) {
-      actions += `<button class="hse-action full" data-action="hse" data-id="${t.id}">🦺 PNR y evaluación de riesgo</button>`;
+      actions += `<button class="hse-action full" data-action="hse" data-id="${t.id}">🦺 Informe HSE, PNR y riesgo</button>`;
     }
   }
 
@@ -1210,7 +1223,7 @@ function showTicketDetail(t) {
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
       ${isIncomingNeighborVoice(t) ? `<button class="primary full incoming-call-button" type="button" id="btnDetailAnswerCall">☎️ Atender llamada del vecino</button>` : ""}
-      ${isAssignedToMe(t) && isMiningHseExperience() ? `<button class="hse-action full" type="button" id="btnDetailHse">🦺 PNR y evaluación de riesgo</button>` : ""}
+      ${isAssignedToMe(t) && isMiningHseExperience() ? `<button class="hse-action full" type="button" id="btnDetailHse">🦺 Informe HSE, PNR y riesgo</button>` : ""}
       ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Iniciar llamada al vecino</button>` : ""}
     </div>
   `;
@@ -1311,6 +1324,8 @@ function renderHsePanel(data) {
   const documents = Array.isArray(data?.pnr_documents) ? data.pnr_documents : [];
   const assessments = Array.isArray(data?.risk_assessments) ? data.risk_assessments : [];
   const suggestion = data?.frequency_suggestion || {};
+  const incident = data?.incident || {};
+  const closure = data?.closure_request || null;
   $("hsePanelSubtitle").textContent = `Caso #${String(ticket.id || activeHseTicketId || "").slice(0, 8).toUpperCase()} · registra la evaluación del ${visibleTerm("responder", "Profesional HSE")}.`;
   $("hsePnrArea").textContent = `Área del trabajador: ${ticket.work_area || "sin área asignada"}`;
   $("hsePnrEmpty").classList.toggle("hidden", documents.length > 0);
@@ -1339,6 +1354,35 @@ function renderHsePanel(data) {
     const level = hseRiskLevel(Number(item.score || 1));
     return `<article class="hse-history-item level-${level.code}"><strong>${item.phase === "RESIDUAL" ? "Residual" : "Inicial"}: ${escapeHtml(item.score)} · ${escapeHtml(level.label)}</strong><span>Gravedad ${escapeHtml(item.severity)} × frecuencia ${escapeHtml(item.frequency)} · ${escapeHtml(item.assessed_by_name || "Profesional HSE")}</span><small>${escapeHtml(formatResolverActivityTime(item.assessed_at))}${item.notes ? ` · ${escapeHtml(item.notes)}` : ""}</small></article>`;
   }).join("");
+  const inspections = Array.isArray(data?.inspections) ? data.inspections : [];
+  $("hseInspectionHistory").innerHTML = inspections.map(item => `<article class="hse-history-item"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(String(item.result || "").replaceAll("_", " "))}${item.score == null ? "" : ` · ${escapeHtml(item.score)}%`}</span><small>${escapeHtml(formatResolverActivityTime(item.completed_at || item.created_at))}${item.notes ? ` · ${escapeHtml(item.notes)}` : ""}</small></article>`).join("");
+  const controls = Array.isArray(data?.critical_controls) ? data.critical_controls : [];
+  $("hseCriticalControl").innerHTML = '<option value="">Seleccionar control</option>' + controls.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join("");
+  const verifications = Array.isArray(data?.control_verifications) ? data.control_verifications : [];
+  $("hseControlHistory").innerHTML = verifications.map(item => `<article class="hse-history-item"><strong>${escapeHtml(item.control_code)} · ${escapeHtml(item.control_name)}</strong><span>${escapeHtml(String(item.result || "").replaceAll("_", " "))}</span><small>${escapeHtml(formatResolverActivityTime(item.verified_at))}${item.notes ? ` · ${escapeHtml(item.notes)}` : ""}</small></article>`).join("");
+  updateHseControlQuestion();
+  $("hseInvestigationNotes").value = incident.investigation_notes || "";
+  $("hseImmediateActions").value = incident.immediate_actions || "";
+  $("hseRootCauses").value = Array.isArray(incident.root_causes) ? incident.root_causes.join("\n") : "";
+  $("hseRecommendations").value = incident.recommendations || "";
+  $("hseInvestigationStatus").value = ["INVESTIGATING", "ACTION_PLAN"].includes(incident.investigation_status)
+    ? incident.investigation_status
+    : "INVESTIGATING";
+  const closureStatus = $("hseClosureStatus");
+  const closureButton = $("btnRequestHseClosure");
+  if (closure) {
+    const labels = { REQUESTED: "Pendiente de aprobación del Supervisor HSE", APPROVED: "Cierre aprobado", REJECTED: "Devuelto por el Supervisor HSE" };
+    closureStatus.textContent = labels[closure.status] || closure.status;
+    closureStatus.className = `hse-closure-status status-${String(closure.status || "").toLowerCase()}`;
+    if (closure.status === "REJECTED" && closure.decision_notes) closureStatus.textContent += ` · ${closure.decision_notes}`;
+    $("hseClosureSummary").value = closure.request_summary || "";
+    closureButton.disabled = closure.status === "REQUESTED" || closure.status === "APPROVED";
+  } else {
+    closureStatus.textContent = "Sin solicitud vigente";
+    closureStatus.className = "hse-closure-status";
+    $("hseClosureSummary").value = "";
+    closureButton.disabled = false;
+  }
   updateHseRiskPreview();
 }
 
@@ -1353,6 +1397,21 @@ async function openHsePanel(ticket) {
   $("hseSeverity").value = "1";
   $("hseFrequency").value = "1";
   $("hseFrequencySource").value = "PROFESSIONAL_ESTIMATE";
+  $("hseInspectionTitle").value = "";
+  $("hseInspectionResult").value = "COMPLIANT";
+  $("hseInspectionScore").value = "";
+  $("hseInspectionNotes").value = "";
+  $("hseCriticalControl").innerHTML = '<option value="">Seleccionar control</option>';
+  $("hseControlResult").value = "EFFECTIVE";
+  $("hseControlNotes").value = "";
+  $("hseCriticalControlQuestion").textContent = "";
+  $("hseInvestigationNotes").value = "";
+  $("hseImmediateActions").value = "";
+  $("hseRootCauses").value = "";
+  $("hseRecommendations").value = "";
+  $("hseInvestigationStatus").value = "INVESTIGATING";
+  $("hseClosureSummary").value = "";
+  $("hseClosureStatus").textContent = "Sin solicitud vigente";
   $("hsePanel").classList.remove("hidden");
   updateHseRiskPreview();
   try {
@@ -1392,6 +1451,109 @@ async function saveHseRisk() {
   } catch (error) {
     toast(error.message || "No fue posible guardar la evaluación");
   } finally {
+    button.disabled = false;
+  }
+}
+
+async function saveHseInvestigation() {
+  if (!activeHseTicketId) return;
+  const button = $("btnSaveHseInvestigation");
+  button.disabled = true;
+  try {
+    await api(`/resolver/tickets/${activeHseTicketId}/safety/investigation`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        investigation_notes: $("hseInvestigationNotes").value.trim() || null,
+        immediate_actions: $("hseImmediateActions").value.trim() || null,
+        root_causes: $("hseRootCauses").value.split("\n").map(value => value.trim()).filter(Boolean),
+        recommendations: $("hseRecommendations").value.trim() || null,
+        investigation_status: $("hseInvestigationStatus").value
+      })
+    });
+    toast("Avance de investigación guardado");
+    activeHseData = await api(`/resolver/tickets/${activeHseTicketId}/safety`);
+    renderHsePanel(activeHseData);
+  } catch (error) {
+    toast(error.message || "No fue posible guardar la investigación");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function updateHseControlQuestion() {
+  const controlId = $("hseCriticalControl")?.value;
+  const control = (activeHseData?.critical_controls || []).find(item => String(item.id) === String(controlId));
+  $("hseCriticalControlQuestion").textContent = control
+    ? `${control.verification_question}${control.performance_standard ? ` · Estándar: ${control.performance_standard}` : ""}`
+    : "";
+}
+
+async function saveHseInspection() {
+  if (!activeHseTicketId) return;
+  const title = $("hseInspectionTitle").value.trim();
+  if (!title) return toast("Indica la inspección realizada");
+  const button = $("btnSaveHseInspection");
+  button.disabled = true;
+  try {
+    await api(`/resolver/tickets/${activeHseTicketId}/safety/inspections`, {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        inspection_type: "FIELD_INSPECTION",
+        result: $("hseInspectionResult").value,
+        score: $("hseInspectionScore").value === "" ? null : Number($("hseInspectionScore").value),
+        notes: $("hseInspectionNotes").value.trim() || null
+      })
+    });
+    activeHseData = await api(`/resolver/tickets/${activeHseTicketId}/safety`);
+    renderHsePanel(activeHseData);
+    $("hseInspectionTitle").value = "";
+    $("hseInspectionScore").value = "";
+    $("hseInspectionNotes").value = "";
+    toast("Inspección registrada en el expediente");
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+
+async function saveHseControlVerification() {
+  if (!activeHseTicketId) return;
+  const controlId = $("hseCriticalControl").value;
+  if (!controlId) return toast("Selecciona un control crítico");
+  const button = $("btnSaveHseControl");
+  button.disabled = true;
+  try {
+    await api(`/resolver/tickets/${activeHseTicketId}/safety/control-verifications`, {
+      method: "POST",
+      body: JSON.stringify({
+        control_id: controlId,
+        result: $("hseControlResult").value,
+        notes: $("hseControlNotes").value.trim() || null
+      })
+    });
+    activeHseData = await api(`/resolver/tickets/${activeHseTicketId}/safety`);
+    renderHsePanel(activeHseData);
+    $("hseControlNotes").value = "";
+    toast("Control crítico verificado");
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+
+async function requestHseClosure() {
+  if (!activeHseTicketId) return;
+  const summary = $("hseClosureSummary").value.trim();
+  if (!summary) return toast("Escribe el resumen ejecutivo para solicitar el cierre");
+  const button = $("btnRequestHseClosure");
+  button.disabled = true;
+  try {
+    await api(`/resolver/tickets/${activeHseTicketId}/safety/closure-request`, {
+      method: "POST",
+      body: JSON.stringify({ request_summary: summary })
+    });
+    toast("Solicitud enviada al Supervisor HSE");
+    activeHseData = await api(`/resolver/tickets/${activeHseTicketId}/safety`);
+    renderHsePanel(activeHseData);
+  } catch (error) {
+    toast(error.message || "No fue posible solicitar el cierre");
     button.disabled = false;
   }
 }
@@ -1908,6 +2070,59 @@ async function loadState() {
   }
 }
 
+function renderSupervisorClosures(rows = []) {
+  const list = $("supervisorClosureList");
+  if (!list) return;
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty">No hay solicitudes de cierre pendientes.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(item => `
+    <article class="ticket-card supervisor-closure-card">
+      <div class="ticket-head"><div><h3 class="ticket-title">🦺 ${escapeHtml(item.ticket_title || "Caso HSE")}</h3><p class="ticket-meta">#${escapeHtml(String(item.ticket_id || "").slice(0, 8).toUpperCase())} · ${escapeHtml(item.event_sector_name || "Área no indicada")}</p></div><span class="badge security">${escapeHtml(item.status)}</span></div>
+      <div class="ticket-body">
+        <p><strong>Profesional HSE:</strong> ${escapeHtml(item.resolver_name || item.requested_by_name || "—")}</p>
+        <p><strong>Resumen:</strong> ${escapeHtml(item.request_summary || "—")}</p>
+        <p><strong>Riesgo residual:</strong> ${escapeHtml(item.residual_risk_score ?? "—")} · ${escapeHtml(item.residual_risk_level || "Sin evaluar")}</p>
+        <p><strong>Investigación:</strong> ${escapeHtml(item.investigation_notes || "Sin antecedentes")}</p>
+        <p><strong>Acciones inmediatas:</strong> ${escapeHtml(item.immediate_actions || "—")}</p>
+        <p><strong>Recomendaciones:</strong> ${escapeHtml(item.recommendations || "—")}</p>
+      </div>
+      <div class="actions"><button class="primary" type="button" data-supervisor-decision="APPROVED" data-request-id="${escapeHtml(item.id)}">Aprobar cierre</button><button class="secondary danger-soft" type="button" data-supervisor-decision="REJECTED" data-request-id="${escapeHtml(item.id)}">Devolver al HSE</button></div>
+    </article>`).join("");
+  list.querySelectorAll("[data-supervisor-decision]").forEach(button => {
+    button.addEventListener("click", () => decideHseClosure(button.dataset.requestId, button.dataset.supervisorDecision));
+  });
+}
+
+async function loadSupervisorClosures() {
+  if (!isSupervisorPortal()) return;
+  const list = $("supervisorClosureList");
+  if (list) list.innerHTML = '<div class="empty">Cargando solicitudes HSE...</div>';
+  try {
+    const data = await api("/hse/supervisor/closure-requests?status=REQUESTED");
+    renderSupervisorClosures(data.closure_requests || []);
+  } catch (error) {
+    if (list) list.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function decideHseClosure(requestId, decision) {
+  const approved = decision === "APPROVED";
+  const notes = prompt(approved ? "Comentario de aprobación (opcional)" : "Motivo de devolución al Profesional HSE", "");
+  if (notes === null || (!approved && !notes.trim())) return;
+  try {
+    await api(`/hse/supervisor/closure-requests/${encodeURIComponent(requestId)}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision, decision_notes: notes.trim() || null })
+    });
+    toast(approved ? "Cierre aprobado" : "Caso devuelto al Profesional HSE");
+    await loadSupervisorClosures();
+  } catch (error) {
+    toast(error.message || "No fue posible registrar la decisión");
+  }
+}
+
 
 
 const SETTINGS_KEYS = {
@@ -1967,14 +2182,21 @@ async function login() {
     return;
   }
   try {
-    const resp = await api("/resolver/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        phone,
-        code: code || undefined,
-        channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined
-      })
-    });
+    let resp;
+    try {
+      resp = await api("/resolver/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ phone, code: code || undefined, channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined })
+      });
+      portalMode = "RESOLVER";
+    } catch (resolverError) {
+      if (![403, 404].includes(Number(resolverError.httpStatus))) throw resolverError;
+      resp = await api("/auth/panel-login", {
+        method: "POST",
+        body: JSON.stringify({ phone, panel_type: "CONTROL_CENTER", code: code || undefined, channel: SOS_CONFIG.DEMO_MODE ? "demo" : undefined })
+      });
+      portalMode = "SUPERVISOR_HSE";
+    }
     if (resp.requires_verification) {
       $("loginMsg").textContent = resp.demo_code
         ? `Código demo: ${resp.demo_code}`
@@ -1982,15 +2204,21 @@ async function login() {
       $("otpInput").focus();
       return;
     }
-    if (resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol RESOLVER");
+    if (portalMode === "RESOLVER" && resp.user.role !== "RESOLVER") throw new Error("Este usuario no tiene rol Profesional HSE");
+    if (portalMode === "SUPERVISOR_HSE" && !["OPERATOR", "ADMIN", "SUPER_ADMIN"].includes(resp.user.role)) throw new Error("Este usuario no tiene rol Supervisor HSE");
     localStorage.setItem(RESOLVER_TOKEN_KEY, resp.token);
     user = resp.user;
     localStorage.setItem("resolver_user", JSON.stringify(user));
+    localStorage.setItem("queltu_response_portal_mode", portalMode);
     showMain();
-    await updateGps("AVAILABLE").catch((err) => toast(err.message));
-    startGpsHeartbeat();
-    await reconcileStatus();
-    await loadState();
+    if (isSupervisorPortal()) {
+      await loadSupervisorClosures();
+    } else {
+      await updateGps("AVAILABLE").catch((err) => toast(err.message));
+      startGpsHeartbeat();
+      await reconcileStatus();
+      await loadState();
+    }
     startPolling();
   } catch (err) {
     $("loginMsg").textContent = err.message;
@@ -1999,8 +2227,14 @@ async function login() {
 
 function showMain() {
   $("loginView").classList.add("hidden");
-  $("mainView").classList.remove("hidden");
-  $("btnSettings").classList.remove("hidden");
+  $("mainView").classList.toggle("hidden", isSupervisorPortal());
+  $("supervisorView")?.classList.toggle("hidden", !isSupervisorPortal());
+  $("btnSettings").classList.toggle("hidden", isSupervisorPortal());
+  if (isSupervisorPortal()) {
+    $("supervisorName").textContent = user?.full_name || "Supervisor HSE";
+    $("supervisorCenter").textContent = user?.control_center_name || user?.control_center_code || "Centro de control";
+    return;
+  }
   $("resolverName").textContent = user?.full_name || "Resolutor";
   $("resolverCenter").textContent = user?.control_center_name || user?.control_center_code || "Centro de control";
   updateStatusPill(currentStatus);
@@ -2008,7 +2242,7 @@ function showMain() {
 
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(loadState, POLL_MS);
+  pollTimer = setInterval(isSupervisorPortal() ? loadSupervisorClosures : loadState, POLL_MS);
 }
 
 function init() {
@@ -2030,6 +2264,12 @@ function init() {
   $("btnOpenWaze").addEventListener("click", () => openExternalNavigation("waze"));
   $("btnCloseHsePanel")?.addEventListener("click", closeHsePanel);
   $("btnSaveHseRisk")?.addEventListener("click", saveHseRisk);
+  $("btnSaveHseInvestigation")?.addEventListener("click", saveHseInvestigation);
+  $("btnSaveHseInspection")?.addEventListener("click", saveHseInspection);
+  $("btnSaveHseControl")?.addEventListener("click", saveHseControlVerification);
+  $("hseCriticalControl")?.addEventListener("change", updateHseControlQuestion);
+  $("btnRequestHseClosure")?.addEventListener("click", requestHseClosure);
+  $("btnRefreshSupervisor")?.addEventListener("click", loadSupervisorClosures);
   $("hseSeverity")?.addEventListener("change", updateHseRiskPreview);
   $("hseFrequency")?.addEventListener("change", () => {
     if ($("hseFrequencySource")?.value === "SYSTEM_SUGGESTION" && Number(activeHseData?.frequency_suggestion?.value) !== Number($("hseFrequency").value)) {
@@ -2077,13 +2317,18 @@ function init() {
   });
   $("settingsTestNotification")?.addEventListener("click", testResolverNotification);
   $("settingsLogout")?.addEventListener("click", logout);
+  $("btnSupervisorLogout")?.addEventListener("click", logout);
 
   if (user && localStorage.getItem(RESOLVER_TOKEN_KEY)) {
     showMain();
-    loadState();
-    if (currentStatus !== "OFFLINE") {
-      updateGps(currentStatus).catch(() => null);
-      startGpsHeartbeat();
+    if (isSupervisorPortal()) {
+      loadSupervisorClosures();
+    } else {
+      loadState();
+      if (currentStatus !== "OFFLINE") {
+        updateGps(currentStatus).catch(() => null);
+        startGpsHeartbeat();
+      }
     }
     startPolling();
   } else if (user) {

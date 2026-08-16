@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#0f172a" />
-  <title>Alerta Comunal Resolutor</title>
+  <meta name="theme-color" content="#151A1D" />
+  <title>QUELTU Respuesta</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css?v=12.4-call-lifecycle" />
+  <link rel="stylesheet" href="styles.css?v=13.0-hse-workspace" />
+  <link rel="stylesheet" href="queltu-brand.css?v=20260816-1" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Alerta Comunal Resolutor">
+  <meta name="apple-mobile-web-app-title" content="QUELTU Respuesta">
   <meta name="format-detection" content="telephone=no">
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
@@ -23,10 +24,10 @@
   <div id="appShell" class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <img src="logo.svg" alt="Alerta Comunal" />
+        <img src="queltu-symbol.png" alt="QUELTU" />
         <div>
-          <strong>Alerta Comunal</strong>
-          <span>Resolutor</span>
+          <strong>QUELTU</strong>
+          <span>Respuesta en terreno</span>
         </div>
       </div>
       <button id="btnSettings" class="ghost hidden" type="button">⚙️</button>
@@ -34,8 +35,8 @@
 
     <main>
       <section id="loginView" class="card login-card">
-        <h1>Ingreso Resolutor</h1>
-        <p>Ingresa con el teléfono registrado por la central municipal.</p>
+        <h1>Ingreso QUELTU Respuesta</h1>
+        <p>Ingresa con el teléfono registrado por tu Centro de Control.</p>
         <label for="phoneInput">Teléfono</label>
         <input id="phoneInput" type="tel" placeholder="+569XXXXXXXX" autocomplete="tel" />
         <label for="otpInput">Código OTP</label>
@@ -81,6 +82,25 @@
         </section>
 
         <section id="ticketsList" class="tickets-list"></section>
+      </section>
+
+      <section id="supervisorView" class="hidden">
+        <section class="status-card supervisor-status-card">
+          <div>
+            <span class="eyebrow">Seguridad operacional</span>
+            <h2 id="supervisorName">Supervisor HSE</h2>
+            <p id="supervisorCenter">—</p>
+          </div>
+          <div class="supervisor-header-actions">
+            <button id="btnRefreshSupervisor" class="secondary small" type="button">Actualizar</button>
+            <button id="btnSupervisorLogout" class="danger small" type="button">Cerrar sesión</button>
+          </div>
+        </section>
+        <section class="card supervisor-intro">
+          <h2>Solicitudes de cierre</h2>
+          <p>Revisa la investigación, el riesgo residual y las recomendaciones del Profesional HSE antes de aprobar o devolver el caso.</p>
+        </section>
+        <section id="supervisorClosureList" class="tickets-list"></section>
       </section>
     </main>
   </div>
@@ -187,6 +207,58 @@
         <div id="hseRiskHistory" class="hse-risk-history"></div>
         <p id="hseRiskHistoryEmpty" class="muted hidden">Todavía no existen evaluaciones para este ticket.</p>
       </section>
+      <section class="hse-section">
+        <h3>🔎 Inspección en terreno</h3>
+        <label for="hseInspectionTitle">Inspección realizada</label>
+        <input id="hseInspectionTitle" maxlength="180" placeholder="Ej: Inspección del área y equipos involucrados" />
+        <div class="hse-risk-grid">
+          <label>Resultado
+            <select id="hseInspectionResult"><option value="COMPLIANT">Conforme</option><option value="PARTIAL">Parcial</option><option value="NON_COMPLIANT">No conforme</option><option value="NOT_EVALUATED">No evaluado</option></select>
+          </label>
+          <label>Puntaje 0–100
+            <input id="hseInspectionScore" type="number" min="0" max="100" inputmode="numeric" />
+          </label>
+        </div>
+        <label for="hseInspectionNotes">Hallazgos y evidencia</label>
+        <textarea id="hseInspectionNotes" placeholder="Condiciones observadas, evidencias y desviaciones detectadas..."></textarea>
+        <button id="btnSaveHseInspection" class="primary" type="button">Registrar inspección</button>
+        <div id="hseInspectionHistory" class="hse-risk-history"></div>
+      </section>
+      <section class="hse-section">
+        <h3>🛡️ Verificación de controles críticos</h3>
+        <p class="muted tiny">Selecciona un control definido por Administración y registra su efectividad en terreno.</p>
+        <label for="hseCriticalControl">Control crítico</label>
+        <select id="hseCriticalControl"><option value="">Seleccionar control</option></select>
+        <div id="hseCriticalControlQuestion" class="hse-control-question muted"></div>
+        <label for="hseControlResult">Resultado</label>
+        <select id="hseControlResult"><option value="EFFECTIVE">Efectivo</option><option value="FAILED">Fallido</option><option value="NOT_APPLICABLE">No aplica</option></select>
+        <label for="hseControlNotes">Observación / evidencia</label>
+        <textarea id="hseControlNotes" placeholder="Describe la condición verificada y la evidencia disponible..."></textarea>
+        <button id="btnSaveHseControl" class="primary" type="button">Registrar verificación</button>
+        <div id="hseControlHistory" class="hse-risk-history"></div>
+      </section>
+      <section class="hse-section">
+        <h3>Investigación y plan de acción</h3>
+        <label for="hseInvestigationNotes">Análisis / investigación</label>
+        <textarea id="hseInvestigationNotes" placeholder="Antecedentes levantados, secuencia de hechos y hallazgos..."></textarea>
+        <label for="hseImmediateActions">Acciones inmediatas adoptadas</label>
+        <textarea id="hseImmediateActions" placeholder="Aislamiento del área, atención de personas, detención de equipo..."></textarea>
+        <label for="hseRootCauses">Causas identificadas (una por línea)</label>
+        <textarea id="hseRootCauses" placeholder="Falla de barrera física&#10;Desviación del procedimiento..."></textarea>
+        <label for="hseRecommendations">Recomendaciones y acciones propuestas</label>
+        <textarea id="hseRecommendations" placeholder="Medidas para evitar recurrencia, responsables y seguimiento..."></textarea>
+        <label for="hseInvestigationStatus">Estado de investigación</label>
+        <select id="hseInvestigationStatus"><option value="INVESTIGATING">En investigación</option><option value="ACTION_PLAN">Plan de acción</option></select>
+        <button id="btnSaveHseInvestigation" class="primary" type="button">Guardar avance de investigación</button>
+      </section>
+      <section class="hse-section hse-closure-section">
+        <h3>Solicitud de cierre</h3>
+        <div id="hseClosureStatus" class="hse-closure-status">Sin solicitud vigente</div>
+        <p class="muted tiny">Para solicitar cierre debes registrar una evaluación de riesgo residual. El Supervisor HSE aprobará o devolverá el caso.</p>
+        <label for="hseClosureSummary">Resumen ejecutivo para aprobación</label>
+        <textarea id="hseClosureSummary" placeholder="Describe la atención, hallazgos, controles implementados y fundamento del cierre..."></textarea>
+        <button id="btnRequestHseClosure" class="primary" type="button">Solicitar aprobación de cierre</button>
+      </section>
     </div>
   </div>
 
@@ -278,6 +350,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=12.4-call-lifecycle"></script>
+  <script src="app.js?v=13.0-hse-workspace"></script>
 </body>
 </html>
