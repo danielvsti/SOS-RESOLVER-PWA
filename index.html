@@ -285,8 +285,8 @@
         <label for="routineInspectionArea">Área de trabajo</label>
         <select id="routineInspectionArea"></select>
 
-        <label for="routineInspectionNotes">Notas y hallazgos</label>
-        <textarea id="routineInspectionNotes" maxlength="5000" placeholder="Describe condiciones observadas, hallazgos y acciones inmediatas..."></textarea>
+        <label for="routineInspectionNotes">Resumen general (opcional)</label>
+        <textarea id="routineInspectionNotes" maxlength="5000" placeholder="Síntesis de la inspección. Agrega cada hallazgo desde la bitácora de evidencias..."></textarea>
 
         <div class="routine-evidence-block">
           <div class="routine-evidence-title">
@@ -301,7 +301,6 @@
             <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
             <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
           </div>
-          <input id="routineInspectionVideoInput" class="hidden" type="file" accept="video/*" capture="environment" />
           <div id="routineInspectionEvidenceList" class="routine-evidence-list"></div>
         </div>
 
@@ -319,6 +318,44 @@
         </div>
         <div id="routineInspectionRecentList" class="routine-recent-list"><p class="muted">Aún no has registrado inspecciones.</p></div>
       </section>
+    </div>
+  </div>
+
+  <div id="routineEvidencePanel" class="modal routine-evidence-modal hidden">
+    <div class="modal-card routine-evidence-modal-card" role="dialog" aria-modal="true" aria-labelledby="routineEvidenceModalTitle">
+      <button id="btnCloseRoutineEvidence" class="modal-close" type="button" aria-label="Cerrar evidencia">×</button>
+      <header class="routine-evidence-modal-heading">
+        <span class="eyebrow">Bitácora de inspección</span>
+        <h2 id="routineEvidenceModalTitle">Agregar evidencia</h2>
+        <p id="routineEvidenceModalSubtitle">Registra y revisa la evidencia antes de incorporarla.</p>
+      </header>
+
+      <section id="routineEvidenceTextMode" class="routine-capture-mode hidden">
+        <label for="routineEvidenceText">Nota de terreno</label>
+        <textarea id="routineEvidenceText" maxlength="3000" placeholder="Describe el hallazgo, condición observada o acción inmediata..."></textarea>
+      </section>
+
+      <section id="routineEvidenceAudioMode" class="routine-capture-mode hidden">
+        <div class="routine-capture-state">
+          <span id="routineEvidenceAudioIndicator" class="routine-capture-indicator">🎙️</span>
+          <div><strong id="routineEvidenceAudioStatus">Listo para grabar</strong><small>Máximo 60 segundos.</small></div>
+        </div>
+        <audio id="routineEvidenceAudioPreview" class="routine-media-preview hidden" controls preload="metadata"></audio>
+        <button id="btnRoutineEvidenceRecord" class="danger" type="button">Iniciar grabación</button>
+      </section>
+
+      <section id="routineEvidenceVideoMode" class="routine-capture-mode hidden">
+        <p class="muted">Graba con la cámara o selecciona un video. Podrás revisarlo antes de agregarlo.</p>
+        <video id="routineEvidenceVideoPreview" class="routine-media-preview hidden" controls playsinline preload="metadata"></video>
+        <button id="btnRoutineEvidencePickVideo" class="primary" type="button">Grabar o seleccionar video</button>
+        <input id="routineEvidenceVideoInput" class="hidden" type="file" accept="video/*" capture="environment" />
+      </section>
+
+      <p id="routineEvidenceModalMsg" class="msg routine-evidence-modal-msg" aria-live="polite"></p>
+      <div class="routine-evidence-modal-actions">
+        <button id="btnCancelRoutineEvidence" class="secondary" type="button">Cancelar</button>
+        <button id="btnConfirmRoutineEvidence" class="primary" type="button">Agregar a la bitácora</button>
+      </div>
     </div>
   </div>
 

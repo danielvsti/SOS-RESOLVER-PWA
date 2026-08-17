@@ -48,6 +48,10 @@ let routineInspectionRecorder = null;
 let routineInspectionAudioChunks = [];
 let routineInspectionAudioStream = null;
 let routineInspectionRecordingTimeout = null;
+let routineInspectionCaptureMode = null;
+let routineInspectionEditingIndex = -1;
+let routineInspectionPendingMedia = null;
+let routineInspectionPreviewUrl = null;
 let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
 let knownVoiceSessionIds = new Set(JSON.parse(localStorage.getItem("resolver_known_voice_session_ids") || "[]"));
 let lastNotificationAt = 0;
@@ -2204,6 +2208,117 @@ function routineEvidenceSize(bytes) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function routineEvidenceKind(item = {}) {
+  return String(item.media_type || item.type || "text").toLowerCase();
+}
+
+function releaseRoutineInspectionPreview() {
+  if (routineInspectionPreviewUrl) URL.revokeObjectURL(routineInspectionPreviewUrl);
+  routineInspectionPreviewUrl = null;
+  const audio = $("routineEvidenceAudioPreview");
+  const video = $("routineEvidenceVideoPreview");
+  [audio, video].forEach((element) => {
+    if (!element) return;
+    element.pause?.();
+    element.removeAttribute("src");
+    element.load?.();
+    element.classList.add("hidden");
+  });
+}
+
+function stopRoutineInspectionRecorder() {
+  clearTimeout(routineInspectionRecordingTimeout);
+  routineInspectionRecordingTimeout = null;
+  routineInspectionAudioStream?.getTracks().forEach((track) => track.stop());
+  routineInspectionAudioStream = null;
+}
+
+function showRoutineInspectionMediaPreview(blob, mode) {
+  releaseRoutineInspectionPreview();
+  if (!blob) return;
+  const element = mode === "audio" ? $("routineEvidenceAudioPreview") : $("routineEvidenceVideoPreview");
+  if (!element) return;
+  routineInspectionPreviewUrl = URL.createObjectURL(blob);
+  element.src = routineInspectionPreviewUrl;
+  element.classList.remove("hidden");
+}
+
+function setRoutineEvidenceModalMessage(message) {
+  const element = $("routineEvidenceModalMsg");
+  if (element) element.textContent = message || "";
+}
+
+function setRoutineEvidenceConfirmEnabled(enabled) {
+  const button = $("btnConfirmRoutineEvidence");
+  if (button) button.disabled = !enabled;
+}
+
+function openRoutineEvidenceCapture(mode, index = -1) {
+  if (!['text', 'audio', 'video'].includes(mode)) return;
+  if (routineInspectionRecorder?.state === "recording") routineInspectionRecorder.stop();
+  stopRoutineInspectionRecorder();
+  releaseRoutineInspectionPreview();
+  routineInspectionCaptureMode = mode;
+  routineInspectionEditingIndex = Number.isInteger(index) ? index : -1;
+  const existing = routineInspectionEditingIndex >= 0 ? routineInspectionEvidence[routineInspectionEditingIndex] : null;
+  routineInspectionPendingMedia = existing && mode !== "text" ? { ...existing } : null;
+  setRoutineEvidenceModalMessage("");
+
+  $("routineEvidenceTextMode")?.classList.toggle("hidden", mode !== "text");
+  $("routineEvidenceAudioMode")?.classList.toggle("hidden", mode !== "audio");
+  $("routineEvidenceVideoMode")?.classList.toggle("hidden", mode !== "video");
+  const labels = {
+    text:[existing ? "Editar nota" : "Agregar nota", "Registra un hallazgo independiente dentro de la bitácora."],
+    audio:[existing ? "Revisar o reemplazar audio" : "Agregar audio", "Graba y escucha el audio antes de incorporarlo."],
+    video:[existing ? "Revisar o reemplazar video" : "Agregar video", "Graba o selecciona un video y revísalo antes de incorporarlo."]
+  };
+  $("routineEvidenceModalTitle").textContent = labels[mode][0];
+  $("routineEvidenceModalSubtitle").textContent = labels[mode][1];
+  $("routineEvidenceText").value = mode === "text" ? String(existing?.text || "") : "";
+  if ($("routineEvidenceVideoInput")) $("routineEvidenceVideoInput").value = "";
+  if ($("btnRoutineEvidenceRecord")) $("btnRoutineEvidenceRecord").textContent = existing ? "Reemplazar grabación" : "Iniciar grabación";
+  if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = existing ? "Audio listo para revisar" : "Listo para grabar";
+  $("routineEvidenceAudioIndicator")?.classList.remove("recording");
+  if (routineInspectionPendingMedia?.blob) showRoutineInspectionMediaPreview(routineInspectionPendingMedia.blob, mode);
+  setRoutineEvidenceConfirmEnabled(mode === "text" ? !!String(existing?.text || "").trim() : !!routineInspectionPendingMedia?.blob);
+  $("routineEvidencePanel")?.classList.remove("hidden");
+  if (mode === "text") setTimeout(() => $("routineEvidenceText")?.focus(), 100);
+}
+
+function closeRoutineEvidenceCapture() {
+  if (routineInspectionRecorder?.state === "recording") {
+    routineInspectionRecorder.ondataavailable = null;
+    routineInspectionRecorder.onstop = null;
+    routineInspectionRecorder.stop();
+  }
+  stopRoutineInspectionRecorder();
+  releaseRoutineInspectionPreview();
+  routineInspectionRecorder = null;
+  routineInspectionAudioChunks = [];
+  routineInspectionCaptureMode = null;
+  routineInspectionEditingIndex = -1;
+  routineInspectionPendingMedia = null;
+  $("routineEvidencePanel")?.classList.add("hidden");
+}
+
+function confirmRoutineEvidence() {
+  const mode = routineInspectionCaptureMode;
+  let evidence = null;
+  if (mode === "text") {
+    const value = $("routineEvidenceText")?.value.trim() || "";
+    if (!value) return setRoutineEvidenceModalMessage("Escribe una nota antes de agregarla.");
+    evidence = { media_type:"text", text:value, created_at:new Date().toISOString() };
+  } else if (routineInspectionPendingMedia?.blob) {
+    evidence = { ...routineInspectionPendingMedia };
+  }
+  if (!evidence) return setRoutineEvidenceModalMessage("Prepara la evidencia antes de agregarla.");
+  if (routineInspectionEditingIndex >= 0) routineInspectionEvidence.splice(routineInspectionEditingIndex, 1, evidence);
+  else routineInspectionEvidence.push(evidence);
+  renderRoutineInspectionEvidence();
+  closeRoutineEvidenceCapture();
+  toast(`${mode === "text" ? "Nota" : mode === "audio" ? "Audio" : "Video"} agregado a la bitácora`);
+}
+
 function renderRoutineInspectionEvidence() {
   const list = $("routineInspectionEvidenceList");
   const status = $("routineInspectionEvidenceStatus");
@@ -2211,12 +2326,24 @@ function renderRoutineInspectionEvidence() {
   status.textContent = routineInspectionEvidence.length
     ? `${routineInspectionEvidence.length} evidencia${routineInspectionEvidence.length === 1 ? "" : "s"}`
     : "Sin evidencia";
-  list.innerHTML = routineInspectionEvidence.map((item, index) => `
+  list.innerHTML = routineInspectionEvidence.map((item, index) => {
+    const kind = routineEvidenceKind(item);
+    const icon = kind === "text" ? "📝" : kind === "audio" ? "🎙️" : "📹";
+    const title = kind === "text" ? "Nota de terreno" : kind === "audio" ? "Nota de audio" : "Video de terreno";
+    const detail = kind === "text" ? item.text : `${item.file_name || "Archivo"} · ${routineEvidenceSize(item.blob?.size || item.size_bytes)}`;
+    return `
     <div class="routine-evidence-item">
-      <span class="routine-evidence-item-icon">${item.media_type === "audio" ? "🎙️" : "📹"}</span>
-      <div><strong>${item.media_type === "audio" ? "Nota de audio" : "Video de terreno"}</strong><small>${escapeHtml(item.file_name)} · ${routineEvidenceSize(item.blob?.size)}</small></div>
+      <span class="routine-evidence-item-icon">${icon}</span>
+      <button class="routine-review-evidence" type="button" data-routine-evidence-review="${index}"><strong>${title}</strong><small>${escapeHtml(detail)}</small></button>
       <button class="routine-remove-evidence" type="button" data-routine-evidence-index="${index}" aria-label="Quitar evidencia">×</button>
-    </div>`).join("");
+    </div>`;
+  }).join("");
+  list.querySelectorAll("[data-routine-evidence-review]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.routineEvidenceReview);
+      openRoutineEvidenceCapture(routineEvidenceKind(routineInspectionEvidence[index]), index);
+    });
+  });
   list.querySelectorAll("[data-routine-evidence-index]").forEach((button) => {
     button.addEventListener("click", () => {
       routineInspectionEvidence.splice(Number(button.dataset.routineEvidenceIndex), 1);
@@ -2274,6 +2401,7 @@ function openRoutineInspectionPanel() {
 
 function closeRoutineInspectionPanel() {
   if (routineInspectionRecorder?.state === "recording") routineInspectionRecorder.stop();
+  closeRoutineEvidenceCapture();
   $("routineInspectionPanel")?.classList.add("hidden");
 }
 
@@ -2284,6 +2412,9 @@ async function toggleRoutineInspectionAudio() {
   }
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("Este dispositivo no permite grabar audio desde la app.");
   try {
+    releaseRoutineInspectionPreview();
+    routineInspectionPendingMedia = null;
+    setRoutineEvidenceConfirmEnabled(false);
     routineInspectionAudioChunks = [];
     routineInspectionAudioStream = await navigator.mediaDevices.getUserMedia({ audio:true });
     const recorder = new MediaRecorder(routineInspectionAudioStream, preferredAudioOptions());
@@ -2293,41 +2424,46 @@ async function toggleRoutineInspectionAudio() {
     };
     recorder.onstop = () => {
       clearTimeout(routineInspectionRecordingTimeout);
-      routineInspectionAudioStream?.getTracks().forEach((track) => track.stop());
-      routineInspectionAudioStream = null;
-      $("routineInspectionAudioTool")?.classList.remove("recording");
-      if ($("routineInspectionAudioTool")) $("routineInspectionAudioTool").innerHTML = "<span>🎙️</span><small>Audio</small>";
+      stopRoutineInspectionRecorder();
+      $("routineEvidenceAudioIndicator")?.classList.remove("recording");
+      if ($("btnRoutineEvidenceRecord")) $("btnRoutineEvidenceRecord").textContent = "Reemplazar grabación";
       const mimeType = recorder.mimeType || routineInspectionAudioChunks[0]?.type || "audio/webm";
       const blob = new Blob(routineInspectionAudioChunks, { type:mimeType });
       if (!blob.size) return;
       if (blob.size > 8 * 1024 * 1024) return toast("El audio supera el máximo de 8 MB.");
       const ext = fileExtensionForMime(mimeType, "webm");
-      routineInspectionEvidence.push({ media_type:"audio", blob, file_name:`inspeccion-audio-${Date.now()}.${ext}` });
-      renderRoutineInspectionEvidence();
-      toast("Audio agregado a la inspección");
+      routineInspectionPendingMedia = { media_type:"audio", blob, file_name:`inspeccion-audio-${Date.now()}.${ext}` };
+      showRoutineInspectionMediaPreview(blob, "audio");
+      if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = "Audio listo para revisar";
+      setRoutineEvidenceConfirmEnabled(true);
     };
     recorder.start();
-    $("routineInspectionAudioTool")?.classList.add("recording");
-    $("routineInspectionAudioTool").innerHTML = "<span>⏹️</span><small>Detener</small>";
-    toast("Grabando audio de la inspección");
+    $("routineEvidenceAudioIndicator")?.classList.add("recording");
+    if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = "Grabando audio...";
+    if ($("btnRoutineEvidenceRecord")) $("btnRoutineEvidenceRecord").textContent = "Detener grabación";
     routineInspectionRecordingTimeout = setTimeout(() => {
       if (recorder.state === "recording") recorder.stop();
     }, 60_000);
   } catch (error) {
+    stopRoutineInspectionRecorder();
+    routineInspectionRecorder = null;
+    $("routineEvidenceAudioIndicator")?.classList.remove("recording");
+    if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = "No fue posible iniciar la grabación";
     toast(error.message || "No fue posible acceder al micrófono");
   }
 }
 
 function queueRoutineInspectionVideo(event) {
-  const input = event?.target || $("routineInspectionVideoInput");
+  const input = event?.target || $("routineEvidenceVideoInput");
   const file = input?.files?.[0];
   if (!file) return;
   if (!String(file.type || "").startsWith("video/")) return toast("Selecciona un archivo de video válido.");
   if (file.size > 20 * 1024 * 1024) return toast("El video supera el máximo de 20 MB.");
-  routineInspectionEvidence.push({ media_type:"video", blob:file, file_name:file.name || `inspeccion-video-${Date.now()}.mp4` });
+  routineInspectionPendingMedia = { media_type:"video", blob:file, file_name:file.name || `inspeccion-video-${Date.now()}.mp4` };
   input.value = "";
-  renderRoutineInspectionEvidence();
-  toast("Video agregado a la inspección");
+  showRoutineInspectionMediaPreview(file, "video");
+  setRoutineEvidenceConfirmEnabled(true);
+  setRoutineEvidenceModalMessage("");
 }
 
 async function saveRoutineInspection() {
@@ -2346,12 +2482,21 @@ async function saveRoutineInspection() {
   button.textContent = "Guardando inspección...";
   setRoutineInspectionMessage("Creando registro y cargando evidencia...");
   try {
+    const textEvidence = routineInspectionEvidence
+      .filter((evidence) => routineEvidenceKind(evidence) === "text")
+      .map((evidence) => ({
+        media_type:"text",
+        text:String(evidence.text || "").trim(),
+        created_at:evidence.created_at || new Date().toISOString()
+      }))
+      .filter((evidence) => evidence.text);
     const created = await api("/resolver/safety/inspections", {
       method:"POST",
       body:JSON.stringify({
         title,
         area:$("routineInspectionArea")?.value || user?.work_area || null,
         notes:$("routineInspectionNotes")?.value.trim() || null,
+        text_evidence:textEvidence,
         inspection_type:"ROUTINE_INSPECTION",
         result:"NOT_EVALUATED"
       })
@@ -2362,7 +2507,7 @@ async function saveRoutineInspection() {
     }
     let uploaded = 0;
     const failed = [];
-    for (const evidence of routineInspectionEvidence) {
+    for (const evidence of routineInspectionEvidence.filter((item) => ["audio", "video"].includes(routineEvidenceKind(item)))) {
       try {
         const dataUrl = await blobToDataUrl(evidence.blob);
         await api(`/resolver/safety/inspections/${encodeURIComponent(inspectionId)}/evidence`, {
@@ -2380,7 +2525,8 @@ async function saveRoutineInspection() {
       setRoutineInspectionMessage(`Inspección guardada. ${uploaded} evidencia(s) cargada(s) y ${failed.length} pendiente(s).`, true);
       toast("Inspección guardada con evidencia pendiente");
     } else {
-      setRoutineInspectionMessage(`Inspección guardada correctamente${uploaded ? ` con ${uploaded} evidencia(s)` : ""}.`, true);
+      const evidenceCount = textEvidence.length + uploaded;
+      setRoutineInspectionMessage(`Inspección guardada correctamente${evidenceCount ? ` con ${evidenceCount} evidencia(s)` : ""}.`, true);
       toast("Inspección de rutina registrada");
     }
   } catch (error) {
@@ -2579,10 +2725,21 @@ function init() {
   $("routineInspectionPanel")?.addEventListener("click", (event) => {
     if (event.target === $("routineInspectionPanel")) closeRoutineInspectionPanel();
   });
-  $("routineInspectionNoteTool")?.addEventListener("click", () => $("routineInspectionNotes")?.focus());
-  $("routineInspectionAudioTool")?.addEventListener("click", toggleRoutineInspectionAudio);
-  $("routineInspectionVideoTool")?.addEventListener("click", () => $("routineInspectionVideoInput")?.click());
-  $("routineInspectionVideoInput")?.addEventListener("change", queueRoutineInspectionVideo);
+  $("routineInspectionNoteTool")?.addEventListener("click", () => openRoutineEvidenceCapture("text"));
+  $("routineInspectionAudioTool")?.addEventListener("click", () => openRoutineEvidenceCapture("audio"));
+  $("routineInspectionVideoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("video"));
+  $("btnCloseRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);
+  $("btnCancelRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);
+  $("btnConfirmRoutineEvidence")?.addEventListener("click", confirmRoutineEvidence);
+  $("btnRoutineEvidenceRecord")?.addEventListener("click", toggleRoutineInspectionAudio);
+  $("btnRoutineEvidencePickVideo")?.addEventListener("click", () => $("routineEvidenceVideoInput")?.click());
+  $("routineEvidenceVideoInput")?.addEventListener("change", queueRoutineInspectionVideo);
+  $("routineEvidenceText")?.addEventListener("input", () => {
+    setRoutineEvidenceConfirmEnabled(!!$("routineEvidenceText")?.value.trim());
+  });
+  $("routineEvidencePanel")?.addEventListener("click", (event) => {
+    if (event.target === $("routineEvidencePanel")) closeRoutineEvidenceCapture();
+  });
   $("btnSaveRoutineInspection")?.addEventListener("click", saveRoutineInspection);
   $("btnRefreshRoutineInspections")?.addEventListener("click", loadRoutineInspections);
   $("btnCloseSettings")?.addEventListener("click", closeSettingsPanel);
