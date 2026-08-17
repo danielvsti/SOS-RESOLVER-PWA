@@ -43,6 +43,11 @@ let recordingTimerInterval = null;
 let recordingStartedAt = null;
 let activeHseTicketId = null;
 let activeHseData = null;
+let routineInspectionEvidence = [];
+let routineInspectionRecorder = null;
+let routineInspectionAudioChunks = [];
+let routineInspectionAudioStream = null;
+let routineInspectionRecordingTimeout = null;
 let knownAssignedTicketIds = new Set(JSON.parse(localStorage.getItem("resolver_known_assigned_ticket_ids") || "[]"));
 let knownVoiceSessionIds = new Set(JSON.parse(localStorage.getItem("resolver_known_voice_session_ids") || "[]"));
 let lastNotificationAt = 0;
@@ -123,6 +128,30 @@ function visibleTerm(key, fallback) {
   return stateCache?.platform_settings?.terminology?.[key] || fallback;
 }
 
+function endUserTerm() {
+  return visibleTerm("endUser", isMiningHseExperience() ? "Trabajador" : "Vecino");
+}
+
+function responderTerm() {
+  const configured = visibleTerm("responder", isMiningHseExperience() ? "Profesional HSE" : "Resolutor");
+  return isMiningHseExperience() && configured === "Brigadista" ? "Profesional HSE" : configured;
+}
+
+function zoneTerm() {
+  return visibleTerm("zone", isMiningHseExperience() ? "Área o faena" : "Sector");
+}
+
+function termLower(value) {
+  const text = String(value || "");
+  return text ? text.charAt(0).toLocaleLowerCase("es-CL") + text.slice(1) : text;
+}
+
+function termPlural(value) {
+  const text = String(value || "");
+  if (!text) return text;
+  return /[aeiouáéíóú]$/i.test(text) ? `${text}s` : `${text}es`;
+}
+
 
 function resolverActivityIcon(type) {
   switch (type) {
@@ -166,13 +195,13 @@ function normalizeTicketActionForResolver(action) {
   let fileName = metadata.file_name || null;
 
   if (actorRole === "NEIGHBOR") {
-    if (actionType === "MESSAGE_TEXT") title = "Mensaje enviado por vecino";
-    if (actionType === "MEDIA_AUDIO") title = "Audio enviado por vecino";
-    if (actionType === "MEDIA_VIDEO") title = "Video enviado por vecino";
+    if (actionType === "MESSAGE_TEXT") title = `Mensaje enviado por ${termLower(endUserTerm())}`;
+    if (actionType === "MEDIA_AUDIO") title = `Audio enviado por ${termLower(endUserTerm())}`;
+    if (actionType === "MEDIA_VIDEO") title = `Video enviado por ${termLower(endUserTerm())}`;
   } else if (actorRole === "RESOLVER") {
-    if (actionType === "MESSAGE_TEXT") title = "Antecedente registrado por resolutor";
-    if (actionType === "MEDIA_AUDIO") title = "Audio de terreno del resolutor";
-    if (actionType === "MEDIA_VIDEO") title = "Video de terreno del resolutor";
+    if (actionType === "MESSAGE_TEXT") title = `Antecedente registrado por ${termLower(responderTerm())}`;
+    if (actionType === "MEDIA_AUDIO") title = `Audio de terreno del ${termLower(responderTerm())}`;
+    if (actionType === "MEDIA_VIDEO") title = `Video de terreno del ${termLower(responderTerm())}`;
   } else if (actorRole === "OPERATOR") {
     title = action?.description || "Actualización de la central";
   }
@@ -506,7 +535,14 @@ function sectorFromCoords(latitude, longitude) {
 }
 
 function ticketIncidentSector(ticket) {
-  return ticket?.incident_sector || ticket?.sector_estimado || ticket?.sector_aproximado || sectorFromCoords(ticket?.latitude, ticket?.longitude);
+  const sector = ticket?.incident_sector || ticket?.sector_estimado || ticket?.sector_aproximado;
+  if (isMiningHseExperience()) {
+    if (!sector || sector === "Dentro de la comuna, sin unidad vecinal identificada" || sector === "Sector no informado" || sector === "Viña del Mar") {
+      return `${zoneTerm()} no informada`;
+    }
+    return sector;
+  }
+  return sector || sectorFromCoords(ticket?.latitude, ticket?.longitude);
 }
 
 
@@ -540,8 +576,8 @@ function voiceSessionLabel(session) {
   if (!session) return "";
   const status = String(session.status || "CREATED").toUpperCase();
   if (status === "CONNECTED") return "En llamada segura";
-  if (status === "RINGING" || status === "WAITING") return "Llamada entrante del vecino";
-  return "Vecino solicita llamada segura";
+  if (status === "RINGING" || status === "WAITING") return `Llamada entrante del ${termLower(endUserTerm())}`;
+  return `${endUserTerm()} solicita llamada segura`;
 }
 function resolverVoiceSessionKey(session) {
   return session?.id || session?.wa_center_session_id || null;
@@ -608,7 +644,7 @@ function ticketCard(t) {
   const hasCoords = Number.isFinite(Number(t.latitude)) && Number.isFinite(Number(t.longitude));
   const title = `${typeIcon(t.alert_type)} ${t.title || t.alert_type || "Emergencia"}`;
   const sector = ticketIncidentSector(t);
-  const meta = `${t.citizen_name || "Vecino"} · ${sector} · ${ticketAge(t)} · ${stateLabel(t.state)}`;
+  const meta = `${t.citizen_name || endUserTerm()} · ${sector} · ${ticketAge(t)} · ${stateLabel(t.state)}`;
   const idShort = String(t.id || "").slice(0, 8).toUpperCase();
   const reportCount = Number(t.report_count || 0);
   const incomingVoice = activeVoiceSessionForTicket(t);
@@ -645,8 +681,8 @@ function ticketCard(t) {
   if (hasActiveVoiceForThisTicket) {
     actions += resolverVoiceControlHtml(t);
   } else if (incomingVoiceForMe) {
-    actions += `<div class="incoming-call-banner full"><strong>📞 ${escapeHtml(voiceSessionLabel(incomingVoice))}</strong><span>El vecino espera que atiendas esta llamada segura.</span></div>`;
-    actions += `<button class="primary full incoming-call-button" data-action="answer-voice" data-id="${t.id}" data-session-id="${escapeHtml(incomingVoice.id || incomingVoice.wa_center_session_id || 'latest')}">☎️ Atender llamada del vecino</button>`;
+    actions += `<div class="incoming-call-banner full"><strong>📞 ${escapeHtml(voiceSessionLabel(incomingVoice))}</strong><span>El ${termLower(endUserTerm())} espera que atiendas esta llamada segura.</span></div>`;
+    actions += `<button class="primary full incoming-call-button" data-action="answer-voice" data-id="${t.id}" data-session-id="${escapeHtml(incomingVoice.id || incomingVoice.wa_center_session_id || 'latest')}">☎️ Atender llamada del ${termLower(endUserTerm())}</button>`;
   }
 
   if (canUpdateField) {
@@ -654,7 +690,7 @@ function ticketCard(t) {
     actions += `<button class="field-action" data-action="field-text" data-id="${t.id}">📝 Antecedente</button>`;
     actions += `<button class="field-action" data-action="field-audio" data-id="${t.id}">🎙️ Audio</button>`;
     actions += `<button class="field-action" data-action="field-video" data-id="${t.id}">📹 Video</button>`;
-    actions += `<button class="field-action" data-action="secure-call" data-id="${t.id}">📞 Iniciar llamada al vecino</button>`;
+    actions += `<button class="field-action" data-action="secure-call" data-id="${t.id}">📞 Iniciar llamada al ${termLower(endUserTerm())}</button>`;
   }
 
   return `
@@ -669,11 +705,11 @@ function ticketCard(t) {
       <div class="ticket-body">
         <div><strong>Prioridad:</strong> ${escapeHtml(t.priority || "—")}</div>
         <div><strong>Tipo:</strong> ${escapeHtml(typeLabel(t.alert_type))}</div>
-        <div><strong>Sector del evento:</strong> ${escapeHtml(sector)}</div>
-        <div><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "—")}</div>
-        <div><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "—")}</div>
-        ${reportCount > 1 ? `<div><strong>Reportes ciudadanos:</strong> 👥 ${reportCount} vecinos reportaron este incidente</div>` : ""}
-        <div><strong>Asignación:</strong> ${assigned ? "Asignado a mí" : available ? "Disponible" : escapeHtml(t.resolver_name || "Otro resolutor")}</div>
+        <div><strong>${escapeHtml(zoneTerm())} del evento:</strong> ${escapeHtml(sector)}</div>
+        <div><strong>${escapeHtml(endUserTerm())}:</strong> ${escapeHtml(t.citizen_name || "—")}</div>
+        <div><strong>Teléfono ${escapeHtml(termLower(endUserTerm()))}:</strong> ${escapeHtml(t.citizen_phone || "—")}</div>
+        ${reportCount > 1 ? `<div><strong>Reportes recibidos:</strong> 👥 ${reportCount} ${escapeHtml(termLower(termPlural(endUserTerm())))} reportaron este incidente</div>` : ""}
+        <div><strong>Asignación:</strong> ${assigned ? "Asignado a mí" : available ? "Disponible" : escapeHtml(t.resolver_name || `Otro ${termLower(responderTerm())}`)}</div>
         ${incomingVoice ? `<div><strong>Llamada:</strong> ${escapeHtml(voiceSessionLabel(incomingVoice))}</div>` : ""}
       </div>
       <div class="actions">${actions}</div>
@@ -742,8 +778,8 @@ function showResolverVoiceOverlay(ticket, session, mode = "incoming") {
   $("resolverVoiceTitle").textContent = mode === "incoming" ? "Llamada entrante" : "Conectando llamada…";
   $("resolverVoiceCase").textContent = `Caso ${resolverVoiceShortCase(ticket.id)}`;
   $("resolverVoiceMessage").textContent = mode === "incoming"
-    ? "El vecino quiere entregar más detalles."
-    : "Estamos conectando el canal de audio con el vecino.";
+    ? `El ${termLower(endUserTerm())} quiere entregar más detalles.`
+    : `Estamos conectando el canal de audio con el ${termLower(endUserTerm())}.`;
   $("resolverVoiceTimer").classList.add("hidden");
   $("btnRejectVoice").classList.toggle("hidden", mode !== "incoming");
   $("btnAnswerVoice").classList.toggle("hidden", mode !== "incoming");
@@ -804,10 +840,10 @@ function updateResolverVoiceTimer() {
 function markResolverVoiceConnected() {
   stopResolverRingback();
   resolverVoice.status = "connected";
-  resolverVoice.statusMessage = "En llamada con el vecino";
+  resolverVoice.statusMessage = `En llamada con el ${termLower(endUserTerm())}`;
   resolverVoice.connectedAt = resolverVoice.connectedAt || Date.now();
   $("resolverVoiceTitle").textContent = "Llamada conectada";
-  $("resolverVoiceMessage").textContent = "Ya puedes conversar con el vecino.";
+  $("resolverVoiceMessage").textContent = `Ya puedes conversar con el ${termLower(endUserTerm())}.`;
   $("resolverVoiceTimer").classList.remove("hidden");
   $("btnRejectVoice").classList.add("hidden");
   $("btnAnswerVoice").classList.add("hidden");
@@ -1033,7 +1069,7 @@ async function connectResolverVoice(voiceSession, options = {}) {
       mediaConstraints: { audio: true, video: false },
       pcConfig: { iceServers: voiceSession?.ice_servers || [] },
       eventHandlers: {
-        progress: () => setResolverVoiceStatus("Llamando... esperando que el vecino entre a la llamada.", "ringing"),
+        progress: () => setResolverVoiceStatus(`Llamando... esperando que el ${termLower(endUserTerm())} entre a la llamada.`, "ringing"),
         confirmed: () => {
           // El anexo ya entró al bridge, pero esperamos la confirmación del
           // backend antes de presentar la llamada como conectada.
@@ -1087,14 +1123,14 @@ async function connectResolverVoice(voiceSession, options = {}) {
 }
 
 async function requestSecureCall(ticketId) {
-  if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  if (!user?.id) return toast(`Debes iniciar sesión como ${termLower(responderTerm())}.`);
   try {
     const data = await api(`/resolver/tickets/${ticketId}/voice/request`, {
       method: "POST",
       body: JSON.stringify({ resolver_user_id: user.id })
     });
     const waSession = data.voice_session?.wa_center_session_id || data.voice_session?.id || "";
-    toast("Llamada segura solicitada al vecino. Entrando al canal de audio...");
+    toast(`Llamada segura solicitada al ${termLower(endUserTerm())}. Entrando al canal de audio...`);
     const ticket = findTicket(ticketId) || { id: ticketId };
     showResolverVoiceOverlay(ticket, data.voice_session, "outgoing");
     startResolverRingback();
@@ -1114,10 +1150,10 @@ async function requestSecureCall(ticketId) {
 }
 
 async function answerNeighborVoice(ticketId, sessionId = "latest") {
-  if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  if (!user?.id) return toast(`Debes iniciar sesión como ${termLower(responderTerm())}.`);
   stopResolverRingback();
   try {
-    toast("Atendiendo llamada segura del vecino...");
+    toast(`Atendiendo llamada segura del ${termLower(endUserTerm())}...`);
     await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/accept`, {
       method: "POST",
       body: JSON.stringify({ resolver_user_id: user.id })
@@ -1144,7 +1180,7 @@ async function answerNeighborVoice(ticketId, sessionId = "latest") {
 }
 
 async function rejectNeighborVoice(ticketId, sessionId = "latest") {
-  if (!user?.id) return toast("Debes iniciar sesión como resolutor.");
+  if (!user?.id) return toast(`Debes iniciar sesión como ${termLower(responderTerm())}.`);
   try {
     await api(`/resolver/tickets/${ticketId}/voice/sessions/${sessionId || 'latest'}/reject`, {
       method: "POST",
@@ -1211,27 +1247,27 @@ function showTicketDetail(t) {
   $("modalContent").innerHTML = `
     <h2>${escapeHtml(typeIcon(t.alert_type) + " " + (t.title || "Emergencia"))}</h2>
     <p><strong>Tipo:</strong> ${escapeHtml(typeLabel(t.alert_type))}</p>
-    <p><strong>Sector del evento:</strong> ${escapeHtml(ticketIncidentSector(t))}</p>
+    <p><strong>${escapeHtml(zoneTerm())} del evento:</strong> ${escapeHtml(ticketIncidentSector(t))}</p>
     <p><strong>Estado:</strong> ${escapeHtml(stateLabel(t.state))}</p>
-    <p><strong>Vecino:</strong> ${escapeHtml(t.citizen_name || "No informado")}</p>
-    <p><strong>Teléfono vecino:</strong> ${escapeHtml(t.citizen_phone || "No informado")}</p>
-    ${Number(t.report_count || 0) > 1 ? `<p><strong>Reportes ciudadanos:</strong> 👥 ${escapeHtml(t.report_count)} vecinos reportaron este incidente.</p>` : ""}
+    <p><strong>${escapeHtml(endUserTerm())}:</strong> ${escapeHtml(t.citizen_name || "No informado")}</p>
+    <p><strong>Teléfono ${escapeHtml(termLower(endUserTerm()))}:</strong> ${escapeHtml(t.citizen_phone || "No informado")}</p>
+    ${Number(t.report_count || 0) > 1 ? `<p><strong>Reportes recibidos:</strong> 👥 ${escapeHtml(t.report_count)} ${escapeHtml(termLower(termPlural(endUserTerm())))} reportaron este incidente.</p>` : ""}
     <p><strong>Descripción:</strong> ${escapeHtml(t.description || "Sin descripción")}</p>
     <p><strong>Ubicación:</strong> ${Number.isFinite(lat) ? lat.toFixed(5) : "—"}, ${Number.isFinite(lon) ? lon.toFixed(5) : "—"}</p>
     <section class="resolver-activity-card">
       <div class="resolver-activity-head">
         <span class="eyebrow">Antecedentes del caso</span>
         <h3>Bitácora y evidencia</h3>
-        <p>Mensajes, audios y videos enviados por el vecino, central y resolutor.</p>
+        <p>Mensajes, audios y videos enviados por el ${escapeHtml(termLower(endUserTerm()))}, central y ${escapeHtml(termLower(responderTerm()))}.</p>
       </div>
       <div id="resolverActivityList" class="resolver-activity-list"></div>
       <p id="resolverActivityEmpty" class="resolver-activity-empty hidden">Aún no hay antecedentes adicionales asociados a este caso.</p>
     </section>
     <div class="actions detail-actions">
       ${Number.isFinite(lat) && Number.isFinite(lon) ? `<button class="secondary full" type="button" id="btnDetailRoute">🗺️ Ver mapa y ruta</button>` : ""}
-      ${isIncomingNeighborVoice(t) ? `<button class="primary full incoming-call-button" type="button" id="btnDetailAnswerCall">☎️ Atender llamada del vecino</button>` : ""}
+      ${isIncomingNeighborVoice(t) ? `<button class="primary full incoming-call-button" type="button" id="btnDetailAnswerCall">☎️ Atender llamada del ${escapeHtml(termLower(endUserTerm()))}</button>` : ""}
       ${isAssignedToMe(t) && isMiningHseExperience() ? `<button class="hse-action full" type="button" id="btnDetailHse">🦺 Informe HSE, PNR y riesgo</button>` : ""}
-      ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Iniciar llamada al vecino</button>` : ""}
+      ${isAssignedToMe(t) && !TERMINAL_STATES.includes(t.state) ? `<button class="field-action" type="button" id="btnDetailText">📝 Antecedente</button><button class="field-action" type="button" id="btnDetailAudio">🎙️ Audio</button><button class="field-action" type="button" id="btnDetailVideo">📹 Video</button><button class="field-action" type="button" id="btnDetailCall">📞 Iniciar llamada al ${escapeHtml(termLower(endUserTerm()))}</button>` : ""}
     </div>
   `;
 
@@ -1333,7 +1369,7 @@ function renderHsePanel(data) {
   const suggestion = data?.frequency_suggestion || {};
   const incident = data?.incident || {};
   const closure = data?.closure_request || null;
-  $("hsePanelSubtitle").textContent = `Caso #${String(ticket.id || activeHseTicketId || "").slice(0, 8).toUpperCase()} · registra la evaluación del ${visibleTerm("responder", "Profesional HSE")}.`;
+  $("hsePanelSubtitle").textContent = `Caso #${String(ticket.id || activeHseTicketId || "").slice(0, 8).toUpperCase()} · registra la evaluación del ${responderTerm()}.`;
   $("hsePnrArea").textContent = `Área del trabajador: ${ticket.work_area || "sin área asignada"}`;
   $("hsePnrEmpty").classList.toggle("hidden", documents.length > 0);
   $("hsePnrList").innerHTML = documents.map((item) => `
@@ -1575,7 +1611,7 @@ function openFieldPanel(ticketId, mode) {
   $("fieldVideoWrap").classList.toggle("hidden", mode !== "video");
   $("fieldTextArea").value = "";
   $("fieldAudioStatus").textContent = "Listo para grabar.";
-  $("fieldVideoStatus").textContent = "Videos de hasta 25 MB para la demo.";
+  $("fieldVideoStatus").textContent = "Videos de hasta 20 MB por inspección.";
   $("fieldPanel").classList.remove("hidden");
 }
 
@@ -1825,7 +1861,7 @@ async function renderRoute(ticket) {
   } catch (err) {
     origin = getLastKnownLatLon();
     if (origin) {
-      $("routeStatus").textContent = "Usando la última ubicación conocida del resolutor.";
+      $("routeStatus").textContent = `Usando la última ubicación conocida del ${termLower(responderTerm())}.`;
     } else {
       $("routeStatus").textContent = err.message;
       return;
@@ -1860,7 +1896,7 @@ async function renderRoute(ticket) {
 function openRoutePanel(ticket) {
   activeRouteTicket = ticket;
   $("routeTitle").textContent = ticket.title || ticket.alert_type || "Emergencia";
-  $("routeSubtitle").textContent = `${typeLabel(ticket.alert_type)} · ${ticketIncidentSector(ticket)} · ${ticket.citizen_name || "Vecino"}`;
+  $("routeSubtitle").textContent = `${typeLabel(ticket.alert_type)} · ${ticketIncidentSector(ticket)} · ${ticket.citizen_name || endUserTerm()}`;
   $("routePanel").classList.remove("hidden");
   renderRoute(ticket);
 }
@@ -1984,15 +2020,15 @@ async function notifyIncomingVoiceCalls(tickets) {
     const ok = await ensureBrowserNotificationPermission();
     if (ok) {
       try {
-        new Notification("📞 Llamada entrante del vecino", {
-          body: `${ticket.citizen_name || "Vecino"} solicita llamada segura por ${typeLabel(ticket.alert_type)}`,
+        new Notification(`📞 Llamada entrante del ${termLower(endUserTerm())}`, {
+          body: `${ticket.citizen_name || endUserTerm()} solicita llamada segura por ${typeLabel(ticket.alert_type)}`,
           tag: `voice-${activeVoiceSessionForTicket(ticket)?.id || ticket.id}`,
           requireInteraction: true
         });
       } catch (_) {}
     }
   }
-  toast(`📞 Llamada entrante del vecino · ${ticket.citizen_name || "Vecino"}`);
+  toast(`📞 Llamada entrante del ${termLower(endUserTerm())} · ${ticket.citizen_name || endUserTerm()}`);
 }
 
 function syncIncomingVoiceOverlay(tickets) {
@@ -2054,8 +2090,11 @@ async function loadState() {
     const data = await api(`/resolver/${user.id}/state`);
     stateCache = data;
     user = data.resolver;
+    updateHeaderActions();
     localStorage.setItem("resolver_user", JSON.stringify(user));
-    $("resolverName").textContent = user.full_name || "Resolutor";
+    $("resolverName").textContent = user.full_name || responderTerm();
+    const roleLabel = document.querySelector("#mainView .status-card .eyebrow");
+    if (roleLabel) roleLabel.textContent = responderTerm();
     $("resolverCenter").textContent = user.control_center_name || user.control_center_code || "Centro de control";
     currentStatus = data.location?.status || data.reconciliation?.new_status || currentStatus || "OFFLINE";
     localStorage.setItem("resolver_status", currentStatus);
@@ -2128,6 +2167,233 @@ async function decideHseClosure(requestId, decision) {
   } catch (error) {
     toast(error.message || "No fue posible registrar la decisión");
   }
+}
+
+function routineInspectionAreas() {
+  const settings = stateCache?.platform_settings || {};
+  const configured = [
+    settings?.safety?.work_areas,
+    settings?.safety_modules?.work_areas,
+    settings?.work_areas,
+    settings?.areas
+  ].find(Array.isArray) || [];
+  const values = [
+    user?.work_area,
+    ...configured.map((item) => typeof item === "string" ? item : item?.name || item?.label),
+    "Toda la operación",
+    "Mina subterránea",
+    "Planta de procesamiento",
+    "Mantenimiento / Taller",
+    "Depósito de relaves",
+    "Servicios / Superficie"
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  return [...new Set(values)];
+}
+
+function populateRoutineInspectionAreas() {
+  const select = $("routineInspectionArea");
+  if (!select) return;
+  const selected = select.value || user?.work_area || "";
+  select.innerHTML = routineInspectionAreas().map((area) => `<option value="${escapeHtml(area)}">${escapeHtml(area)}</option>`).join("");
+  if (selected && [...select.options].some((option) => option.value === selected)) select.value = selected;
+}
+
+function routineEvidenceSize(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderRoutineInspectionEvidence() {
+  const list = $("routineInspectionEvidenceList");
+  const status = $("routineInspectionEvidenceStatus");
+  if (!list || !status) return;
+  status.textContent = routineInspectionEvidence.length
+    ? `${routineInspectionEvidence.length} evidencia${routineInspectionEvidence.length === 1 ? "" : "s"}`
+    : "Sin evidencia";
+  list.innerHTML = routineInspectionEvidence.map((item, index) => `
+    <div class="routine-evidence-item">
+      <span class="routine-evidence-item-icon">${item.media_type === "audio" ? "🎙️" : "📹"}</span>
+      <div><strong>${item.media_type === "audio" ? "Nota de audio" : "Video de terreno"}</strong><small>${escapeHtml(item.file_name)} · ${routineEvidenceSize(item.blob?.size)}</small></div>
+      <button class="routine-remove-evidence" type="button" data-routine-evidence-index="${index}" aria-label="Quitar evidencia">×</button>
+    </div>`).join("");
+  list.querySelectorAll("[data-routine-evidence-index]").forEach((button) => {
+    button.addEventListener("click", () => {
+      routineInspectionEvidence.splice(Number(button.dataset.routineEvidenceIndex), 1);
+      renderRoutineInspectionEvidence();
+    });
+  });
+}
+
+function setRoutineInspectionMessage(message, success = false) {
+  const element = $("routineInspectionMsg");
+  if (!element) return;
+  element.textContent = message || "";
+  element.classList.toggle("success", !!success);
+}
+
+function resetRoutineInspectionDraft() {
+  $("routineInspectionTitle").value = "";
+  $("routineInspectionNotes").value = "";
+  routineInspectionEvidence = [];
+  renderRoutineInspectionEvidence();
+  setRoutineInspectionMessage("");
+}
+
+async function loadRoutineInspections() {
+  const list = $("routineInspectionRecentList");
+  if (!list) return;
+  list.innerHTML = '<p class="muted">Cargando inspecciones...</p>';
+  try {
+    const data = await api("/resolver/safety/inspections?limit=6");
+    const rows = data.inspections || [];
+    if (!rows.length) {
+      list.innerHTML = '<p class="muted">Aún no has registrado inspecciones.</p>';
+      return;
+    }
+    list.innerHTML = rows.map((item) => {
+      const date = new Date(item.completed_at || item.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? "Fecha no disponible" : date.toLocaleString("es-CL", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
+      const evidence = Array.isArray(item.evidence) ? item.evidence.length : 0;
+      return `<article class="routine-recent-item"><div class="routine-recent-item-head"><div><h4>${escapeHtml(item.title || "Inspección de rutina")}</h4><p>${escapeHtml(item.area || "Toda la operación")} · ${escapeHtml(dateLabel)} · ${evidence} evidencia${evidence === 1 ? "" : "s"}</p></div><span class="routine-recent-badge">GUARDADA</span></div></article>`;
+    }).join("");
+  } catch (error) {
+    list.innerHTML = `<p class="msg">${escapeHtml(error.message || "No fue posible cargar las inspecciones")}</p>`;
+  }
+}
+
+function openRoutineInspectionPanel() {
+  if (!isMiningHseExperience()) return toast("Las inspecciones de rutina están disponibles para la experiencia HSE.");
+  populateRoutineInspectionAreas();
+  renderRoutineInspectionEvidence();
+  setRoutineInspectionMessage("");
+  $("routineInspectionPanel")?.classList.remove("hidden");
+  void loadRoutineInspections();
+  setTimeout(() => $("routineInspectionTitle")?.focus(), 120);
+}
+
+function closeRoutineInspectionPanel() {
+  if (routineInspectionRecorder?.state === "recording") routineInspectionRecorder.stop();
+  $("routineInspectionPanel")?.classList.add("hidden");
+}
+
+async function toggleRoutineInspectionAudio() {
+  if (routineInspectionRecorder?.state === "recording") {
+    routineInspectionRecorder.stop();
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("Este dispositivo no permite grabar audio desde la app.");
+  try {
+    routineInspectionAudioChunks = [];
+    routineInspectionAudioStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    const recorder = new MediaRecorder(routineInspectionAudioStream, preferredAudioOptions());
+    routineInspectionRecorder = recorder;
+    recorder.ondataavailable = (event) => {
+      if (event.data?.size > 0) routineInspectionAudioChunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      clearTimeout(routineInspectionRecordingTimeout);
+      routineInspectionAudioStream?.getTracks().forEach((track) => track.stop());
+      routineInspectionAudioStream = null;
+      $("routineInspectionAudioTool")?.classList.remove("recording");
+      if ($("routineInspectionAudioTool")) $("routineInspectionAudioTool").innerHTML = "<span>🎙️</span><small>Audio</small>";
+      const mimeType = recorder.mimeType || routineInspectionAudioChunks[0]?.type || "audio/webm";
+      const blob = new Blob(routineInspectionAudioChunks, { type:mimeType });
+      if (!blob.size) return;
+      if (blob.size > 8 * 1024 * 1024) return toast("El audio supera el máximo de 8 MB.");
+      const ext = fileExtensionForMime(mimeType, "webm");
+      routineInspectionEvidence.push({ media_type:"audio", blob, file_name:`inspeccion-audio-${Date.now()}.${ext}` });
+      renderRoutineInspectionEvidence();
+      toast("Audio agregado a la inspección");
+    };
+    recorder.start();
+    $("routineInspectionAudioTool")?.classList.add("recording");
+    $("routineInspectionAudioTool").innerHTML = "<span>⏹️</span><small>Detener</small>";
+    toast("Grabando audio de la inspección");
+    routineInspectionRecordingTimeout = setTimeout(() => {
+      if (recorder.state === "recording") recorder.stop();
+    }, 60_000);
+  } catch (error) {
+    toast(error.message || "No fue posible acceder al micrófono");
+  }
+}
+
+function queueRoutineInspectionVideo(event) {
+  const input = event?.target || $("routineInspectionVideoInput");
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!String(file.type || "").startsWith("video/")) return toast("Selecciona un archivo de video válido.");
+  if (file.size > 20 * 1024 * 1024) return toast("El video supera el máximo de 20 MB.");
+  routineInspectionEvidence.push({ media_type:"video", blob:file, file_name:file.name || `inspeccion-video-${Date.now()}.mp4` });
+  input.value = "";
+  renderRoutineInspectionEvidence();
+  toast("Video agregado a la inspección");
+}
+
+async function saveRoutineInspection() {
+  const title = $("routineInspectionTitle")?.value.trim();
+  if (!title) {
+    setRoutineInspectionMessage("Escribe el título de la inspección.");
+    $("routineInspectionTitle")?.focus();
+    return;
+  }
+  if (routineInspectionRecorder?.state === "recording") {
+    setRoutineInspectionMessage("Detén la grabación de audio antes de guardar.");
+    return;
+  }
+  const button = $("btnSaveRoutineInspection");
+  button.disabled = true;
+  button.textContent = "Guardando inspección...";
+  setRoutineInspectionMessage("Creando registro y cargando evidencia...");
+  try {
+    const created = await api("/resolver/safety/inspections", {
+      method:"POST",
+      body:JSON.stringify({
+        title,
+        area:$("routineInspectionArea")?.value || user?.work_area || null,
+        notes:$("routineInspectionNotes")?.value.trim() || null,
+        inspection_type:"ROUTINE_INSPECTION",
+        result:"NOT_EVALUATED"
+      })
+    });
+    const inspectionId = created.inspection?.id;
+    if (!inspectionId) {
+      throw new Error("La plataforma no devolvió el identificador de la inspección.");
+    }
+    let uploaded = 0;
+    const failed = [];
+    for (const evidence of routineInspectionEvidence) {
+      try {
+        const dataUrl = await blobToDataUrl(evidence.blob);
+        await api(`/resolver/safety/inspections/${encodeURIComponent(inspectionId)}/evidence`, {
+          method:"POST",
+          body:JSON.stringify({ media_type:evidence.media_type, data_url:dataUrl, file_name:evidence.file_name })
+        });
+        uploaded += 1;
+      } catch (error) {
+        failed.push(error.message || "Error de carga");
+      }
+    }
+    resetRoutineInspectionDraft();
+    await loadRoutineInspections();
+    if (failed.length) {
+      setRoutineInspectionMessage(`Inspección guardada. ${uploaded} evidencia(s) cargada(s) y ${failed.length} pendiente(s).`, true);
+      toast("Inspección guardada con evidencia pendiente");
+    } else {
+      setRoutineInspectionMessage(`Inspección guardada correctamente${uploaded ? ` con ${uploaded} evidencia(s)` : ""}.`, true);
+      toast("Inspección de rutina registrada");
+    }
+  } catch (error) {
+    setRoutineInspectionMessage(error.message || "No fue posible guardar la inspección.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Finalizar y guardar inspección";
+  }
+}
+
+function updateHeaderActions() {
+  $("btnSettings")?.classList.toggle("hidden", isSupervisorPortal());
+  $("btnRoutineInspection")?.classList.toggle("hidden", isSupervisorPortal() || !isMiningHseExperience());
 }
 
 
@@ -2230,13 +2496,13 @@ function showMain() {
   $("loginView").classList.add("hidden");
   $("mainView").classList.toggle("hidden", isSupervisorPortal());
   $("supervisorView")?.classList.toggle("hidden", !isSupervisorPortal());
-  $("btnSettings").classList.toggle("hidden", isSupervisorPortal());
+  updateHeaderActions();
   if (isSupervisorPortal()) {
     $("supervisorName").textContent = user?.full_name || "Supervisor HSE";
     $("supervisorCenter").textContent = user?.control_center_name || user?.control_center_code || "Centro de control";
     return;
   }
-  $("resolverName").textContent = user?.full_name || "Resolutor";
+  $("resolverName").textContent = user?.full_name || responderTerm();
   $("resolverCenter").textContent = user?.control_center_name || user?.control_center_code || "Centro de control";
   updateStatusPill(currentStatus);
 }
@@ -2308,6 +2574,17 @@ function init() {
   }));
 
   $("btnSettings").addEventListener("click", openSettingsPanel);
+  $("btnRoutineInspection")?.addEventListener("click", openRoutineInspectionPanel);
+  $("btnCloseRoutineInspection")?.addEventListener("click", closeRoutineInspectionPanel);
+  $("routineInspectionPanel")?.addEventListener("click", (event) => {
+    if (event.target === $("routineInspectionPanel")) closeRoutineInspectionPanel();
+  });
+  $("routineInspectionNoteTool")?.addEventListener("click", () => $("routineInspectionNotes")?.focus());
+  $("routineInspectionAudioTool")?.addEventListener("click", toggleRoutineInspectionAudio);
+  $("routineInspectionVideoTool")?.addEventListener("click", () => $("routineInspectionVideoInput")?.click());
+  $("routineInspectionVideoInput")?.addEventListener("change", queueRoutineInspectionVideo);
+  $("btnSaveRoutineInspection")?.addEventListener("click", saveRoutineInspection);
+  $("btnRefreshRoutineInspections")?.addEventListener("click", loadRoutineInspections);
   $("btnCloseSettings")?.addEventListener("click", closeSettingsPanel);
   $("settingsPanel")?.addEventListener("click", (event) => {
     if (event.target === $("settingsPanel")) closeSettingsPanel();

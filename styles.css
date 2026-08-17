@@ -21,6 +21,9 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .brand img { width:42px; height:42px; border-radius:12px; }
 .brand strong { display:block; font-size:17px; }
 .brand span { display:block; color:#cbd5e1; font-size:13px; }
+.topbar-actions { display:flex; align-items:center; gap:8px; }
+.topbar-actions .ghost { width:44px; height:44px; padding:0; display:grid; place-items:center; font-size:21px; }
+.inspection-shortcut { background:linear-gradient(180deg,rgba(37,99,235,.9),rgba(29,78,216,.94)); border-color:rgba(147,197,253,.75); box-shadow:0 8px 20px rgba(37,99,235,.25); }
 main { padding:16px; max-width:860px; margin:0 auto; }
 .card, .status-card { background:var(--card); border:1px solid var(--line); border-radius:22px; padding:18px; box-shadow:var(--shadow); margin-bottom:14px; }
 .login-card h1 { margin:0 0 8px; }
@@ -84,6 +87,48 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .modal-card { background:#fff; border-radius:24px; padding:18px; max-width:780px; margin:40px auto; position:relative; box-shadow:var(--shadow); }
 .modal-close { position:absolute; right:12px; top:12px; width:40px; height:40px; border-radius:999px; background:#e2e8f0; font-size:24px; padding:0; }
 .ticket-map { height:280px; border-radius:18px; overflow:hidden; margin-top:14px; border:1px solid var(--line); }
+
+/* Inspecciones autónomas del Profesional HSE */
+.routine-inspection-card { max-width:720px; padding:24px; }
+.routine-inspection-heading { padding-right:48px; margin-bottom:20px; }
+.routine-inspection-heading h2 { margin:5px 0 7px; font-size:27px; letter-spacing:-.025em; }
+.routine-inspection-heading p { margin:0; color:var(--muted); line-height:1.45; }
+.routine-inspection-form { padding:18px; border:1px solid #dbeafe; border-radius:22px; background:linear-gradient(180deg,#f8fbff,#fff); }
+.routine-inspection-form select { width:100%; min-height:50px; border:1px solid var(--line); border-radius:14px; padding:0 14px; font:inherit; background:#fff; color:var(--text); }
+.routine-evidence-block { margin-top:18px; padding:15px; border:1px solid #bfdbfe; border-radius:20px; background:#eff6ff; }
+.routine-evidence-title, .routine-section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.routine-evidence-title strong { display:block; margin-top:4px; }
+.routine-evidence-count { padding:6px 9px; border-radius:999px; background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:900; white-space:nowrap; }
+.routine-tools { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:14px; }
+.routine-tool { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:76px; padding:10px; border:1px solid #cbd5e1; background:#fff; color:#0f172a; box-shadow:0 8px 18px rgba(15,23,42,.06); }
+.routine-tool span { font-size:25px; line-height:1; }
+.routine-tool small { font-size:12px; font-weight:900; }
+.routine-tool.recording { color:#991b1b; border-color:#fca5a5; background:#fff1f2; animation:routinePulse 1.2s ease-in-out infinite; }
+@keyframes routinePulse { 50% { box-shadow:0 0 0 6px rgba(220,38,38,.12); } }
+.routine-evidence-list { display:grid; gap:8px; margin-top:12px; }
+.routine-evidence-item { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:10px; padding:10px; border-radius:14px; background:#fff; border:1px solid #dbeafe; }
+.routine-evidence-item-icon { width:36px; height:36px; display:grid; place-items:center; border-radius:11px; background:#eff6ff; font-size:19px; }
+.routine-evidence-item strong, .routine-evidence-item small { display:block; }
+.routine-evidence-item small { margin-top:2px; color:var(--muted); }
+.routine-remove-evidence { width:34px; height:34px; padding:0; border-radius:999px; background:#fee2e2; color:#991b1b; }
+.routine-save { min-height:54px; }
+.routine-inspection-msg { margin:10px 0 0; }
+.routine-inspection-msg.success { color:#166534; }
+.routine-recent-section { margin-top:18px; padding:18px; border:1px solid var(--line); border-radius:22px; }
+.routine-section-heading h3 { margin:4px 0 0; }
+.routine-recent-list { display:grid; gap:9px; margin-top:14px; }
+.routine-recent-item { padding:13px; border:1px solid var(--line); border-radius:15px; background:#f8fafc; }
+.routine-recent-item-head { display:flex; justify-content:space-between; gap:12px; }
+.routine-recent-item h4 { margin:0; font-size:15px; }
+.routine-recent-item p { margin:5px 0 0; color:var(--muted); font-size:12px; }
+.routine-recent-badge { align-self:flex-start; padding:5px 8px; border-radius:999px; color:#166534; background:#dcfce7; font-size:10px; font-weight:900; }
+
+@media (max-width:520px) {
+  .routine-inspection-card { margin:12px auto; padding:18px 14px; border-radius:22px; }
+  .routine-inspection-form, .routine-recent-section { padding:14px; }
+  .routine-tool { min-height:72px; }
+  .routine-section-heading { align-items:flex-start; }
+}
 
 .resolver-activity-card {
   margin-top: 16px;

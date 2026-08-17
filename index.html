@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#151A1D" />
   <title>QUELTU Respuesta</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css?v=13.0-hse-workspace" />
+  <link rel="stylesheet" href="styles.css?v=13.2-hse-routine-inspections" />
   <link rel="stylesheet" href="queltu-brand.css?v=20260816-1" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -30,7 +30,10 @@
           <span>Respuesta en terreno</span>
         </div>
       </div>
-      <button id="btnSettings" class="ghost hidden" type="button">⚙️</button>
+      <div class="topbar-actions">
+        <button id="btnRoutineInspection" class="ghost inspection-shortcut hidden" type="button" aria-label="Nueva inspección de rutina" title="Nueva inspección de rutina">🔎</button>
+        <button id="btnSettings" class="ghost hidden" type="button" aria-label="Configuración" title="Configuración">⚙️</button>
+      </div>
     </header>
 
     <main>
@@ -209,8 +212,10 @@
       </section>
       <section class="hse-section">
         <h3>🔎 Inspección en terreno</h3>
+        <p class="muted tiny">Documenta la verificación realizada en el lugar del incidente. Este registro deja trazabilidad de las condiciones observadas y de las desviaciones que deben investigarse o corregirse.</p>
         <label for="hseInspectionTitle">Inspección realizada</label>
         <input id="hseInspectionTitle" maxlength="180" placeholder="Ej: Inspección del área y equipos involucrados" />
+        <p class="muted tiny">Indica qué área, tarea, equipo o condición fue revisada.</p>
         <div class="hse-risk-grid">
           <label>Resultado
             <select id="hseInspectionResult"><option value="COMPLIANT">Conforme</option><option value="PARTIAL">Parcial</option><option value="NON_COMPLIANT">No conforme</option><option value="NOT_EVALUATED">No evaluado</option></select>
@@ -219,8 +224,10 @@
             <input id="hseInspectionScore" type="number" min="0" max="100" inputmode="numeric" />
           </label>
         </div>
+        <p class="muted tiny">Resultado: Conforme cumple el estándar; Parcial presenta brechas; No conforme exige corrección. Puntaje: 0 representa condición crítica y 100 cumplimiento total.</p>
         <label for="hseInspectionNotes">Hallazgos y evidencia</label>
         <textarea id="hseInspectionNotes" placeholder="Condiciones observadas, evidencias y desviaciones detectadas..."></textarea>
+        <p class="muted tiny">Describe hechos verificables y referencia las fotos, videos o antecedentes incorporados en la bitácora del caso.</p>
         <button id="btnSaveHseInspection" class="primary" type="button">Registrar inspección</button>
         <div id="hseInspectionHistory" class="hse-risk-history"></div>
       </section>
@@ -258,6 +265,59 @@
         <label for="hseClosureSummary">Resumen ejecutivo para aprobación</label>
         <textarea id="hseClosureSummary" placeholder="Describe la atención, hallazgos, controles implementados y fundamento del cierre..."></textarea>
         <button id="btnRequestHseClosure" class="primary" type="button">Solicitar aprobación de cierre</button>
+      </section>
+    </div>
+  </div>
+
+  <div id="routineInspectionPanel" class="modal hidden">
+    <div class="modal-card routine-inspection-card">
+      <button id="btnCloseRoutineInspection" class="modal-close" type="button" aria-label="Cerrar">×</button>
+      <header class="routine-inspection-heading">
+        <span class="eyebrow">Seguridad operacional</span>
+        <h2>Inspección de rutina</h2>
+        <p>Registra un recorrido preventivo independiente de los casos y emergencias.</p>
+      </header>
+
+      <section class="routine-inspection-form">
+        <label for="routineInspectionTitle">Título de la inspección</label>
+        <input id="routineInspectionTitle" type="text" maxlength="180" placeholder="Ej. Inspección preoperacional del nivel 850" />
+
+        <label for="routineInspectionArea">Área de trabajo</label>
+        <select id="routineInspectionArea"></select>
+
+        <label for="routineInspectionNotes">Notas y hallazgos</label>
+        <textarea id="routineInspectionNotes" maxlength="5000" placeholder="Describe condiciones observadas, hallazgos y acciones inmediatas..."></textarea>
+
+        <div class="routine-evidence-block">
+          <div class="routine-evidence-title">
+            <div>
+              <span class="eyebrow">Evidencia de terreno</span>
+              <strong>Bitácora de la inspección</strong>
+            </div>
+            <span id="routineInspectionEvidenceStatus" class="routine-evidence-count">Sin evidencia</span>
+          </div>
+          <div class="routine-tools" role="toolbar" aria-label="Herramientas de evidencia">
+            <button id="routineInspectionNoteTool" class="routine-tool" type="button"><span>📝</span><small>Nota</small></button>
+            <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
+            <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
+          </div>
+          <input id="routineInspectionVideoInput" class="hidden" type="file" accept="video/*" capture="environment" />
+          <div id="routineInspectionEvidenceList" class="routine-evidence-list"></div>
+        </div>
+
+        <button id="btnSaveRoutineInspection" class="primary routine-save" type="button">Finalizar y guardar inspección</button>
+        <p id="routineInspectionMsg" class="msg routine-inspection-msg" aria-live="polite"></p>
+      </section>
+
+      <section class="routine-recent-section">
+        <div class="routine-section-heading">
+          <div>
+            <span class="eyebrow">Trazabilidad</span>
+            <h3>Mis inspecciones recientes</h3>
+          </div>
+          <button id="btnRefreshRoutineInspections" class="secondary small" type="button">Actualizar</button>
+        </div>
+        <div id="routineInspectionRecentList" class="routine-recent-list"><p class="muted">Aún no has registrado inspecciones.</p></div>
       </section>
     </div>
   </div>
@@ -350,6 +410,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=13.1-hse-supervisor"></script>
+  <script src="app.js?v=13.2-hse-routine-inspections"></script>
 </body>
 </html>
