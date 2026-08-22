@@ -88,9 +88,154 @@ async function api(path, options = {}) {
   if (!res.ok || data.status === "error") {
     const err = new Error(data.message || `HTTP ${res.status}`);
     err.data = data;
+    err.status = res.status;
     throw err;
   }
   return data;
+}
+
+const RESOLVER_OUTBOX_DB = "queltu-resolver-offline";
+const RESOLVER_OUTBOX_STORE = "ticket-actions";
+const RESOLVER_OUTBOX_RETENTION_MS = 24 * 60 * 60 * 1000;
+const RESOLVER_STATE_SNAPSHOT_KEY = "resolver_state_snapshot_city";
+let resolverOutboxSyncing = false;
+
+function resolverClientActionId() {
+  return globalThis.crypto?.randomUUID?.() || `resolver-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function openResolverOutbox() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(RESOLVER_OUTBOX_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(RESOLVER_OUTBOX_STORE)) {
+        db.createObjectStore(RESOLVER_OUTBOX_STORE, { keyPath: "client_action_id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Cola offline no disponible"));
+  });
+}
+
+async function resolverOutboxRequest(mode, operation) {
+  const db = await openResolverOutbox();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(RESOLVER_OUTBOX_STORE, mode);
+      const request = operation(tx.objectStore(RESOLVER_OUTBOX_STORE));
+      tx.oncomplete = () => resolve(request?.result);
+      tx.onerror = () => reject(tx.error || new Error("Error en cola offline"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function listResolverQueuedActions() {
+  const items = await resolverOutboxRequest("readonly", (store) => store.getAll());
+  const cutoff = Date.now() - RESOLVER_OUTBOX_RETENTION_MS;
+  const fresh = (items || []).filter((item) => Number(item.created_at || 0) >= cutoff);
+  const expired = (items || []).filter((item) => Number(item.created_at || 0) < cutoff);
+  await Promise.all(expired.map((item) => resolverOutboxRequest("readwrite", (store) => store.delete(item.client_action_id))));
+  return fresh.sort((a, b) => Number(a.created_at) - Number(b.created_at));
+}
+
+async function queueResolverAction(entry) {
+  await resolverOutboxRequest("readwrite", (store) => store.put(entry));
+  await renderResolverConnectivity();
+}
+
+async function deleteResolverAction(clientActionId) {
+  await resolverOutboxRequest("readwrite", (store) => store.delete(clientActionId));
+}
+
+function resolverConnectivityBanner() {
+  let banner = $("resolverConnectivityBanner");
+  if (banner) return banner;
+  banner = document.createElement("div");
+  banner.id = "resolverConnectivityBanner";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  banner.style.cssText = "position:sticky;top:0;z-index:3500;display:none;padding:10px 16px;text-align:center;font-weight:900;background:#fef3c7;color:#78350f;box-shadow:0 4px 16px rgba(15,23,42,.14)";
+  document.body.prepend(banner);
+  return banner;
+}
+
+async function renderResolverConnectivity() {
+  const banner = resolverConnectivityBanner();
+  let pending = [];
+  try { pending = await listResolverQueuedActions(); } catch (_) {}
+  if (!navigator.onLine || pending.length) {
+    banner.style.display = "block";
+    banner.textContent = pending.length
+      ? `${pending.length} acción${pending.length === 1 ? "" : "es"} de terreno pendiente${pending.length === 1 ? "" : "s"} de sincronizar`
+      : "Sin cobertura · puedes registrar llegada o resolución; quedará pendiente hasta reconectar";
+  } else {
+    banner.style.display = "none";
+  }
+}
+
+function ticketActionPath(action, ticketId) {
+  return `/tickets/${ticketId}/${action}`;
+}
+
+async function sendOrQueueResolverAction(action, ticketId, body) {
+  const entry = {
+    action,
+    ticket_id: ticketId,
+    path: ticketActionPath(action, ticketId),
+    body: { ...body, client_action_id: resolverClientActionId() },
+    client_action_id: null,
+    created_at: Date.now()
+  };
+  entry.client_action_id = entry.body.client_action_id;
+  if (!navigator.onLine) {
+    await queueResolverAction(entry);
+    return { queued: true };
+  }
+  try {
+    return { queued: false, data: await api(entry.path, { method: "POST", body: JSON.stringify(entry.body) }) };
+  } catch (error) {
+    if (error.status && error.status < 500 && error.status !== 429) throw error;
+    await queueResolverAction(entry);
+    return { queued: true };
+  }
+}
+
+function applyQueuedResolverState(ticket, action) {
+  if (!ticket) return;
+  const nextState = { "en-route": "EN_ROUTE", "on-site": "ON_SITE", resolve: "RESOLVED" }[action];
+  if (nextState) ticket.state = nextState;
+  if (action === "en-route" || action === "on-site") currentStatus = nextState;
+  if (action === "resolve") currentStatus = "AVAILABLE";
+  updateStatusPill(currentStatus);
+  renderTickets();
+}
+
+async function syncResolverOutbox() {
+  if (resolverOutboxSyncing || !navigator.onLine || !user?.id || !localStorage.getItem(SESSION_TOKEN_KEY)) return;
+  resolverOutboxSyncing = true;
+  try {
+    const pending = await listResolverQueuedActions();
+    for (const entry of pending) {
+      try {
+        await api(entry.path, { method: "POST", body: JSON.stringify(entry.body) });
+        await deleteResolverAction(entry.client_action_id);
+      } catch (error) {
+        if (error.status >= 400 && error.status < 500 && error.status !== 429) {
+          await deleteResolverAction(entry.client_action_id);
+          toast(`Conflicto al sincronizar ${entry.action}: ${error.message}`);
+        } else {
+          break;
+        }
+      }
+    }
+    await loadState();
+  } finally {
+    resolverOutboxSyncing = false;
+    await renderResolverConnectivity();
+  }
 }
 
 function escapeHtml(value) {
@@ -370,6 +515,7 @@ async function logout() {
   localStorage.removeItem(SESSION_TOKEN_KEY);
   localStorage.removeItem("resolver_status");
   localStorage.removeItem("resolver_known_assigned_ticket_ids");
+  localStorage.removeItem(RESOLVER_STATE_SNAPSHOT_KEY);
 
   closeSettingsPanel();
   closeTicketModal();
@@ -878,6 +1024,9 @@ async function handleTicketAction(action, id, sessionId = null) {
       return answerNeighborVoice(t.id, sessionId || activeVoiceSessionForTicket(t)?.id || "latest");
     }
 
+    if (["accept", "reject", "take"].includes(action) && !navigator.onLine) {
+      return toast("Esta decisión de asignación requiere conexión para evitar que dos patrullas tomen el mismo caso.");
+    }
     if (action === "accept") await api(`/tickets/${id}/accept`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id }) });
     if (action === "reject") {
       const reason = prompt("Motivo del rechazo", "No puedo tomarlo en este momento");
@@ -885,12 +1034,21 @@ async function handleTicketAction(action, id, sessionId = null) {
       await api(`/tickets/${id}/reject`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id, reject_reason: reason }) });
     }
     if (action === "take") await api(`/tickets/${id}/take`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id }) });
-    if (action === "en-route") await api(`/tickets/${id}/en-route`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id }) });
-    if (action === "on-site") await api(`/tickets/${id}/on-site`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id }) });
+    if (action === "en-route" || action === "on-site") {
+      const result = await sendOrQueueResolverAction(action, id, { resolver_user_id: user.id });
+      if (result.queued) {
+        applyQueuedResolverState(t, action);
+        return toast("Acción guardada en el dispositivo; se sincronizará al recuperar cobertura.");
+      }
+    }
     if (action === "resolve") {
       const notes = prompt("Notas de resolución", "Caso atendido en terreno");
       if (notes === null) return;
-      await api(`/tickets/${id}/resolve`, { method: "POST", body: JSON.stringify({ resolver_user_id: user.id, resolution_notes: notes }) });
+      const result = await sendOrQueueResolverAction("resolve", id, { resolver_user_id: user.id, resolution_notes: notes });
+      if (result.queued) {
+        applyQueuedResolverState(t, action);
+        return toast("Cierre guardado en el dispositivo; la central aún no lo ha recibido.");
+      }
     }
 
     toast("Acción registrada");
@@ -1589,6 +1747,19 @@ async function loadState() {
   try {
     const data = await api(`/resolver/${user.id}/state`);
     stateCache = data;
+    if (!SUPERVISOR_MODE) {
+      const snapshotTickets = (data.tickets || [])
+        .filter((ticket) => String(ticket.assigned_resolver_id || ticket.assignment_resolver_id || "") === String(user.id))
+        .map((ticket) => Object.fromEntries([
+          "id", "state", "priority", "alert_type", "title", "description", "latitude", "longitude", "accuracy",
+          "created_at", "updated_at", "assigned_at", "assigned_resolver_id", "assignment_resolver_id", "assignment_state",
+          "citizen_name", "incident_sector", "sector_estimado", "sector_aproximado", "report_count"
+        ].filter((key) => ticket[key] !== undefined).map((key) => [key, ticket[key]])));
+      localStorage.setItem(RESOLVER_STATE_SNAPSHOT_KEY, JSON.stringify({
+        saved_at: Date.now(), resolver: data.resolver, location: data.location,
+        platform_settings: data.platform_settings, tickets: snapshotTickets
+      }));
+    }
     user = data.resolver;
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     $("resolverName").textContent = user.full_name || "Resolutor";
@@ -1608,7 +1779,15 @@ async function loadState() {
     await notifyIncomingVoiceCalls(data.tickets || []);
     renderTickets();
   } catch (err) {
-    toast(err.message);
+    const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
+    if (!SUPERVISOR_MODE && cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
+      stateCache = cached;
+      renderTickets();
+      toast("Sin conexión: mostrando casos asignados guardados en este dispositivo");
+      await renderResolverConnectivity();
+    } else {
+      toast(err.message);
+    }
   }
 }
 
@@ -1865,6 +2044,7 @@ function startPolling() {
 
 function init() {
   configureExperienceMode();
+  void renderResolverConnectivity();
   $("btnLogin").addEventListener("click", login);
   $("otpInput")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") login();
@@ -1931,6 +2111,11 @@ function init() {
     restoreSupervisorSession();
   } else if (!SUPERVISOR_MODE && user && localStorage.getItem(SESSION_TOKEN_KEY)) {
     showMain();
+    const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
+    if (cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
+      stateCache = cached;
+      renderTickets();
+    }
     loadState();
     if (currentStatus !== "OFFLINE") {
       updateGps(currentStatus).catch(() => null);
@@ -1944,3 +2129,16 @@ function init() {
 }
 
 init();
+
+window.addEventListener("online", () => {
+  void renderResolverConnectivity();
+  void syncResolverOutbox();
+});
+window.addEventListener("offline", () => void renderResolverConnectivity());
+setInterval(() => void syncResolverOutbox(), 15000);
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").catch((error) => console.warn("[PWA]", error));
+  });
+}
