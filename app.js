@@ -162,6 +162,12 @@ async function listResolverQueuedActions() {
   return fresh.sort((a, b) => Number(a.created_at) - Number(b.created_at));
 }
 
+async function listResolverQueuedActionsForCurrentUser() {
+  const ownerId = String(user?.id || "");
+  if (!ownerId) return [];
+  return (await listResolverQueuedActions()).filter((item) => String(item.body?.resolver_user_id || "") === ownerId);
+}
+
 async function queueResolverAction(entry) {
   await resolverOutboxRequest("readwrite", (store) => store.put(entry));
   await renderResolverConnectivity();
@@ -186,7 +192,7 @@ function resolverConnectivityBanner() {
 async function renderResolverConnectivity() {
   const banner = resolverConnectivityBanner();
   let pending = [];
-  try { pending = await listResolverQueuedActions(); } catch (_) {}
+  try { pending = await listResolverQueuedActionsForCurrentUser(); } catch (_) {}
   if (!navigator.onLine || pending.length) {
     banner.style.display = "block";
     banner.textContent = pending.length
@@ -238,7 +244,7 @@ async function syncResolverOutbox() {
   if (resolverOutboxSyncing || !navigator.onLine || !user?.id || !localStorage.getItem(SESSION_TOKEN_KEY)) return;
   resolverOutboxSyncing = true;
   try {
-    const pending = await listResolverQueuedActions();
+    const pending = await listResolverQueuedActionsForCurrentUser();
     for (const entry of pending) {
       try {
         await api(entry.path, { method: "POST", body: JSON.stringify(entry.body) });
