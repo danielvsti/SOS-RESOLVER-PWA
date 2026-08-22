@@ -182,10 +182,10 @@ function resolverConnectivityBanner() {
   if (banner) return banner;
   banner = document.createElement("div");
   banner.id = "resolverConnectivityBanner";
+  banner.className = "resolver-connectivity-banner";
   banner.setAttribute("role", "status");
   banner.setAttribute("aria-live", "polite");
-  banner.style.cssText = "position:sticky;top:0;z-index:3500;display:none;padding:10px 16px;text-align:center;font-weight:900;background:#fef3c7;color:#78350f;box-shadow:0 4px 16px rgba(15,23,42,.14)";
-  document.body.prepend(banner);
+  (document.querySelector("#appShell > main") || document.body).prepend(banner);
   return banner;
 }
 
@@ -196,8 +196,8 @@ async function renderResolverConnectivity() {
   if (!navigator.onLine || pending.length) {
     banner.style.display = "block";
     banner.textContent = pending.length
-      ? `${pending.length} acción${pending.length === 1 ? "" : "es"} de terreno pendiente${pending.length === 1 ? "" : "s"} de sincronizar`
-      : "Sin cobertura · puedes registrar llegada o resolución; quedará pendiente hasta reconectar";
+      ? `Sin conexión · ${pending.length} acción${pending.length === 1 ? "" : "es"} pendiente${pending.length === 1 ? "" : "s"} de sincronizar.`
+      : "Sin conexión · llegada y cierre quedarán pendientes hasta reconectar.";
   } else {
     banner.style.display = "none";
   }
@@ -522,7 +522,9 @@ function startGpsHeartbeat() {
       gpsHeartbeatFailures += 1;
       console.warn("resolver gps heartbeat failed", err.message);
       if (gpsHeartbeatFailures === 1 || gpsHeartbeatFailures % 5 === 0) {
-        $("gpsText").textContent = `No se pudo actualizar GPS automáticamente: ${err.message}`;
+        $("gpsText").textContent = (!navigator.onLine || err.code === "NETWORK_ERROR")
+          ? "Sin conexión · la última ubicación se actualizará al reconectar"
+          : `No se pudo actualizar GPS automáticamente: ${err.message}`;
       }
     }
   }, GPS_HEARTBEAT_MS);
@@ -2297,7 +2299,6 @@ async function loadState() {
     if (!SUPERVISOR_MODE && cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
       stateCache = cached;
       renderTickets();
-      toast("Sin conexión: mostrando casos asignados guardados en este dispositivo");
       await renderResolverConnectivity();
     } else {
       toast(err.message);

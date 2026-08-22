@@ -290,6 +290,7 @@ audio.routine-media-preview { height:50px; background:transparent; }
 .rec-dot { width:18px; height:18px; border-radius:50%; background:white; animation:recPulse 1s infinite; }
 @keyframes recPulse { 0% { transform:scale(1); opacity:1; } 50% { transform:scale(1.45); opacity:.55; } 100% { transform:scale(1); opacity:1; } }
 .toast { position:fixed; left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom)); background:#0f172a; color:#fff; padding:14px 16px; border-radius:18px; box-shadow:var(--shadow); z-index:100; text-align:center; }
+.resolver-connectivity-banner { position:sticky; top:0; z-index:35; display:none; width:100%; margin:0 0 12px; padding:10px 14px; border:1px solid #f59e0b; border-radius:14px; background:#fffbeb; color:#78350f; box-shadow:0 5px 16px rgba(120,53,15,.12); font-size:14px; font-weight:850; line-height:1.35; text-align:left; }
 @media (max-width:620px) {
   main { padding:12px; }
   .controls-grid, .actions, .ticket-body { grid-template-columns:1fr; }
@@ -298,6 +299,7 @@ audio.routine-media-preview { height:50px; background:transparent; }
   .route-map { min-height:300px; }
   .route-actions { grid-template-columns:1fr 1fr; }
   .status-card { align-items:flex-start; flex-direction:column; }
+  .resolver-connectivity-banner { padding:9px 12px; font-size:13px; }
   .modal { padding:10px; }
   .modal-card { margin:20px auto; }
 }
