@@ -165,7 +165,7 @@ async function listResolverQueuedActions() {
 async function listResolverQueuedActionsForCurrentUser() {
   const ownerId = String(user?.id || "");
   if (!ownerId) return [];
-  return (await listResolverQueuedActions()).filter((item) => String(item.body?.resolver_user_id || "") === ownerId);
+  return (await listResolverQueuedActions()).filter((item) => String(item.owner_user_id || item.body?.resolver_user_id || "") === ownerId);
 }
 
 async function queueResolverAction(entry) {
@@ -196,7 +196,7 @@ async function renderResolverConnectivity() {
   if (!navigator.onLine || pending.length) {
     banner.style.display = "block";
     banner.textContent = pending.length
-      ? `Sin conexión · ${pending.length} acción${pending.length === 1 ? "" : "es"} pendiente${pending.length === 1 ? "" : "s"} de sincronizar.`
+      ? `Sin conexión · ${pending.length} registro${pending.length === 1 ? "" : "s"} pendiente${pending.length === 1 ? "" : "s"} de sincronizar.`
       : "Sin conexión · llegada y cierre quedarán pendientes hasta reconectar.";
   } else {
     banner.style.display = "none";
@@ -210,10 +210,12 @@ function ticketActionPath(action, ticketId) {
 async function sendOrQueueResolverAction(action, ticketId, body) {
   const entry = {
     action,
+    kind: "ticket-state",
     ticket_id: ticketId,
     path: ticketActionPath(action, ticketId),
     body: { ...body, client_action_id: resolverClientActionId() },
     client_action_id: null,
+    owner_user_id: user?.id || body.resolver_user_id,
     created_at: Date.now()
   };
   entry.client_action_id = entry.body.client_action_id;
@@ -223,6 +225,39 @@ async function sendOrQueueResolverAction(action, ticketId, body) {
   }
   try {
     return { queued: false, data: await api(entry.path, { method: "POST", body: JSON.stringify(entry.body) }) };
+  } catch (error) {
+    if (error.status && error.status < 500 && error.status !== 429) throw error;
+    await queueResolverAction(entry);
+    return { queued: true };
+  }
+}
+
+async function resolverQueuedRequestBody(entry) {
+  const body = { ...(entry.body || {}), client_action_id: entry.client_action_id };
+  if (entry.media_blob instanceof Blob) body.data_url = await blobToDataUrl(entry.media_blob);
+  return body;
+}
+
+async function sendOrQueueResolverEvidence({ ticketId, kind, body, mediaBlob = null }) {
+  const clientActionId = resolverClientActionId();
+  const entry = {
+    action: kind,
+    kind,
+    ticket_id: ticketId,
+    path: kind === "field-text" ? `/tickets/${ticketId}/messages` : `/tickets/${ticketId}/media`,
+    body: { ...body, client_action_id: clientActionId },
+    media_blob: mediaBlob,
+    client_action_id: clientActionId,
+    owner_user_id: user?.id || null,
+    created_at: Date.now()
+  };
+  if (!navigator.onLine) {
+    await queueResolverAction(entry);
+    return { queued: true };
+  }
+  try {
+    const requestBody = await resolverQueuedRequestBody(entry);
+    return { queued: false, data: await api(entry.path, { method: "POST", body: JSON.stringify(requestBody) }) };
   } catch (error) {
     if (error.status && error.status < 500 && error.status !== 429) throw error;
     await queueResolverAction(entry);
@@ -247,12 +282,13 @@ async function syncResolverOutbox() {
     const pending = await listResolverQueuedActionsForCurrentUser();
     for (const entry of pending) {
       try {
-        await api(entry.path, { method: "POST", body: JSON.stringify(entry.body) });
+        const requestBody = await resolverQueuedRequestBody(entry);
+        await api(entry.path, { method: "POST", body: JSON.stringify(requestBody) });
         await deleteResolverAction(entry.client_action_id);
       } catch (error) {
         if (error.status >= 400 && error.status < 500 && error.status !== 429) {
           await deleteResolverAction(entry.client_action_id);
-          toast(`Conflicto al sincronizar ${entry.action}: ${error.message}`);
+          toast(`No se pudo sincronizar ${entry.action}: ${error.message}`);
         } else {
           break;
         }
@@ -1775,13 +1811,13 @@ function openFieldPanel(ticketId, mode) {
   activeFieldTicketId = ticketId;
   activeFieldMode = mode;
   $("fieldTitle").textContent = mode === "text" ? "Agregar antecedente" : mode === "audio" ? "Audio de terreno" : "Video de evidencia";
-  $("fieldSubtitle").textContent = "Este antecedente quedará asociado al ticket y visible para la central.";
+  $("fieldSubtitle").textContent = "Quedará asociado al ticket; sin conexión se guardará en este dispositivo hasta sincronizar.";
   $("fieldTextWrap").classList.toggle("hidden", mode !== "text");
   $("fieldAudioWrap").classList.toggle("hidden", mode !== "audio");
   $("fieldVideoWrap").classList.toggle("hidden", mode !== "video");
   $("fieldTextArea").value = "";
   $("fieldAudioStatus").textContent = "Listo para grabar.";
-  $("fieldVideoStatus").textContent = "Videos de hasta 20 MB por inspección.";
+  $("fieldVideoStatus").textContent = "Videos de hasta 25 MB; sin conexión quedarán pendientes.";
   $("fieldPanel").classList.remove("hidden");
 }
 
@@ -1798,17 +1834,20 @@ async function sendFieldText() {
   if (!message) return toast("Escribe un antecedente antes de enviar.");
 
   try {
-    await api(`/tickets/${activeFieldTicketId}/messages`, {
-      method: "POST",
-      body: JSON.stringify({
+    const result = await sendOrQueueResolverEvidence({
+      ticketId: activeFieldTicketId,
+      kind: "field-text",
+      body: {
         sender_role: "RESOLVER",
         sender_name: user?.full_name || "Resolutor",
         message
-      })
+      }
     });
-    toast("Antecedente enviado a la central");
+    toast(result.queued
+      ? "Antecedente guardado; la central lo recibirá al reconectar."
+      : "Antecedente enviado a la central");
     closeFieldPanel();
-    await loadState();
+    if (!result.queued) await loadState();
   } catch (err) {
     toast(err.message);
   }
@@ -1847,16 +1886,16 @@ function fileExtensionForMime(mimeType, fallback) {
 
 async function uploadFieldMedia(mediaType, blobOrFile, fileName) {
   if (!activeFieldTicketId) throw new Error("No hay ticket activo para adjuntar evidencia.");
-  const dataUrl = await blobToDataUrl(blobOrFile);
-  await api(`/tickets/${activeFieldTicketId}/media`, {
-    method: "POST",
-    body: JSON.stringify({
+  return sendOrQueueResolverEvidence({
+    ticketId: activeFieldTicketId,
+    kind: mediaType === "audio" ? "field-audio" : "field-video",
+    mediaBlob: blobOrFile,
+    body: {
       media_type: mediaType,
-      data_url: dataUrl,
       file_name: fileName,
       sender_role: "RESOLVER",
       sender_name: user?.full_name || "Resolutor"
-    })
+    }
   });
 }
 
@@ -1911,13 +1950,13 @@ async function toggleFieldAudioRecording() {
       const mimeType = mediaRecorder.mimeType || audioChunks[0]?.type || "audio/webm";
       const audioBlob = new Blob(audioChunks, { type: mimeType });
       const ext = fileExtensionForMime(mimeType, "webm");
-      $("fieldAudioStatus").textContent = "Subiendo audio...";
+      $("fieldAudioStatus").textContent = navigator.onLine ? "Enviando audio..." : "Guardando audio en el dispositivo...";
       try {
-        await uploadFieldMedia("audio", audioBlob, `audio-resolutor-${Date.now()}.${ext}`);
-        $("fieldAudioStatus").textContent = "Audio enviado a la central.";
-        toast("Audio enviado a la central");
+        const result = await uploadFieldMedia("audio", audioBlob, `audio-resolutor-${Date.now()}.${ext}`);
+        $("fieldAudioStatus").textContent = result.queued ? "Audio pendiente de sincronizar." : "Audio enviado a la central.";
+        toast(result.queued ? "Audio guardado; se enviará al reconectar." : "Audio enviado a la central");
         closeFieldPanel();
-        await loadState();
+        if (!result.queued) await loadState();
       } catch (err) {
         $("fieldAudioStatus").textContent = "No se pudo enviar el audio.";
         toast(err.message);
@@ -1925,7 +1964,7 @@ async function toggleFieldAudioRecording() {
     };
 
     mediaRecorder.start();
-    $("btnStartAudio").textContent = "⏹️ Detener y enviar audio";
+    $("btnStartAudio").textContent = "⏹️ Detener y guardar audio";
     $("fieldAudioStatus").textContent = "Grabando. Describe brevemente lo que ocurre en terreno.";
     startRecordingUI();
     recordingTimeout = setTimeout(() => {
@@ -1945,13 +1984,13 @@ async function uploadFieldVideo() {
     return toast("El video es muy grande para la demo. Usa un clip más corto.");
   }
 
-  $("fieldVideoStatus").textContent = "Subiendo video...";
+  $("fieldVideoStatus").textContent = navigator.onLine ? "Enviando video..." : "Guardando video en el dispositivo...";
   try {
-    await uploadFieldMedia("video", file, file.name || `video-resolutor-${Date.now()}.mp4`);
-    $("fieldVideoStatus").textContent = "Video enviado a la central.";
-    toast("Video enviado a la central");
+    const result = await uploadFieldMedia("video", file, file.name || `video-resolutor-${Date.now()}.mp4`);
+    $("fieldVideoStatus").textContent = result.queued ? "Video pendiente de sincronizar." : "Video enviado a la central.";
+    toast(result.queued ? "Video guardado; se enviará al reconectar." : "Video enviado a la central");
     closeFieldPanel();
-    await loadState();
+    if (!result.queued) await loadState();
   } catch (err) {
     $("fieldVideoStatus").textContent = "No se pudo enviar el video.";
     toast(err.message);
