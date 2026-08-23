@@ -213,6 +213,21 @@ function applyQueuedResolverState(ticket, action) {
   renderTickets();
 }
 
+async function overlayPendingResolverStates(targetState = stateCache) {
+  const pending = await listResolverQueuedActions();
+  let status = null;
+
+  pending.forEach((entry) => {
+    const nextState = { "en-route": "EN_ROUTE", "on-site": "ON_SITE", resolve: "RESOLVED" }[entry.action];
+    if (!nextState) return;
+    const ticket = (targetState?.tickets || []).find((item) => String(item.id) === String(entry.ticket_id));
+    if (ticket) ticket.state = nextState;
+    status = entry.action === "resolve" ? "AVAILABLE" : nextState;
+  });
+
+  return { pending, status };
+}
+
 async function syncResolverOutbox() {
   if (resolverOutboxSyncing || !navigator.onLine || !user?.id || !localStorage.getItem(SESSION_TOKEN_KEY)) return;
   resolverOutboxSyncing = true;
@@ -1747,6 +1762,7 @@ async function loadState() {
   try {
     const data = await api(`/resolver/${user.id}/state`);
     stateCache = data;
+    const pendingOverlay = await overlayPendingResolverStates(stateCache);
     if (!SUPERVISOR_MODE) {
       const snapshotTickets = (data.tickets || [])
         .filter((ticket) => String(ticket.assigned_resolver_id || ticket.assignment_resolver_id || "") === String(user.id))
@@ -1764,7 +1780,7 @@ async function loadState() {
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     $("resolverName").textContent = user.full_name || "Resolutor";
     $("resolverCenter").textContent = user.control_center_name || user.control_center_code || "Centro de control";
-    currentStatus = data.location?.status || data.reconciliation?.new_status || currentStatus || "OFFLINE";
+    currentStatus = pendingOverlay.status || data.location?.status || data.reconciliation?.new_status || currentStatus || "OFFLINE";
     localStorage.setItem("resolver_status", currentStatus);
     updateStatusPill(currentStatus);
     if (data.location?.latitude && data.location?.longitude) {
@@ -1782,6 +1798,11 @@ async function loadState() {
     const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
     if (!SUPERVISOR_MODE && cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
       stateCache = cached;
+      const pendingOverlay = await overlayPendingResolverStates(stateCache);
+      if (pendingOverlay.status) {
+        currentStatus = pendingOverlay.status;
+        updateStatusPill(currentStatus);
+      }
       renderTickets();
       toast("Sin conexión: mostrando casos asignados guardados en este dispositivo");
       await renderResolverConnectivity();
