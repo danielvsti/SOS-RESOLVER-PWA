@@ -684,6 +684,21 @@ function isAvailableTicket(t) {
   return !t.assigned_resolver_id && !isPendingForMe(t) && !isTerminalTicket(t);
 }
 
+function acceptanceDeadlineState(ticket) {
+  const dueAt = ticket?.assignment_accept_due_at ? new Date(ticket.assignment_accept_due_at).getTime() : null;
+  const pending = String(ticket?.assignment_state || "").toUpperCase() === "PENDING";
+  if (!pending || !Number.isFinite(dueAt)) return { pending, dueAt: null, overdue: false, remainingMs: null };
+  const remainingMs = dueAt - Date.now();
+  return { pending: true, dueAt, overdue: remainingMs <= 0, remainingMs };
+}
+
+function compactDuration(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(Math.abs(Number(milliseconds || 0)) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
 function alertBadgeClass(t) {
   const a = String(t.alert_type || "").toLowerCase();
   if (a.includes("medical") || a.includes("méd") || a.includes("med")) return "medical";
@@ -851,6 +866,7 @@ function renderTickets() {
 
 function ticketCard(t) {
   const pending = isPendingForMe(t);
+  const acceptance = acceptanceDeadlineState(t);
   const assigned = isAssignedToMe(t);
   const available = isAvailableTicket(t);
   const canUpdateField = assigned && !TERMINAL_STATES.includes(t.state);
@@ -865,9 +881,11 @@ function ticketCard(t) {
 
   let actions = "";
 
-  if (pending) {
+  if (pending && !acceptance.overdue) {
     actions += `<button class="primary" data-action="accept" data-id="${t.id}">Aceptar</button>`;
     actions += `<button class="secondary danger-soft" data-action="reject" data-id="${t.id}">Rechazar</button>`;
+  } else if (pending && acceptance.overdue) {
+    actions += `<div class="acceptance-expired-action full">Asignación vencida · actualizando con la Central</div>`;
   } else if (available) {
     actions += `<button class="primary" data-action="take" data-id="${t.id}">Tomar caso</button>`;
   }
@@ -907,7 +925,7 @@ function ticketCard(t) {
   }
 
   return `
-    <article class="ticket-card priority-${escapeHtml(t.priority || 3)}">
+    <article class="ticket-card priority-${escapeHtml(t.priority || 3)} ${acceptance.overdue ? "acceptance-overdue" : ""}">
       <div class="ticket-head">
         <div>
           <h3 class="ticket-title">${escapeHtml(title)}</h3>
@@ -915,6 +933,7 @@ function ticketCard(t) {
         </div>
         <span class="badge ${alertBadgeClass(t)}">${escapeHtml(t.alert_type || "SOS")}</span>
       </div>
+      ${acceptance.pending ? `<div class="acceptance-sla-banner ${acceptance.overdue ? "overdue" : "pending"}"><strong>${acceptance.overdue ? "🚨 Tiempo de aceptación vencido" : "⏱️ Aceptación pendiente"}</strong><span>${acceptance.overdue ? `Venció hace ${compactDuration(acceptance.remainingMs)}. No aceptes: la Central está reasignando el caso.` : `Debes aceptar dentro de ${compactDuration(acceptance.remainingMs)}.`}</span></div>` : ""}
       <div class="ticket-body">
         <div><strong>Prioridad:</strong> ${escapeHtml(t.priority || "—")}</div>
         <div><strong>Tipo:</strong> ${escapeHtml(typeLabel(t.alert_type))}</div>
@@ -2325,6 +2344,7 @@ async function loadState() {
         .map((ticket) => Object.fromEntries([
           "id", "state", "priority", "alert_type", "title", "description", "latitude", "longitude", "accuracy",
           "created_at", "updated_at", "assigned_at", "assigned_resolver_id", "assignment_resolver_id", "assignment_state",
+          "assignment_accept_due_at", "assignment_sla_policy",
           "citizen_name", "incident_sector", "sector_estimado", "sector_aproximado", "report_count"
         ].filter((key) => ticket[key] !== undefined).map((key) => [key, ticket[key]])));
       localStorage.setItem(RESOLVER_STATE_SNAPSHOT_KEY, JSON.stringify({

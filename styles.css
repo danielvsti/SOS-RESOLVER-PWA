@@ -68,6 +68,12 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .ticket-card.priority-1 { border-left-color:#dc2626; }
 .ticket-card.priority-2 { border-left-color:#f59e0b; }
 .ticket-card.priority-3 { border-left-color:#64748b; }
+.ticket-card.acceptance-overdue { border:2px solid #dc2626; border-left-width:8px; box-shadow:0 0 0 4px rgba(220,38,38,.12),0 18px 36px rgba(220,38,38,.24); }
+.acceptance-sla-banner { display:flex; flex-direction:column; gap:4px; margin-top:12px; padding:11px 12px; border-radius:14px; line-height:1.3; }
+.acceptance-sla-banner.pending { background:#fffbeb; border:1px solid #fbbf24; color:#92400e; }
+.acceptance-sla-banner.overdue { background:#fef2f2; border:2px solid #ef4444; color:#991b1b; }
+.acceptance-sla-banner span { font-size:13px; }
+.acceptance-expired-action { padding:13px; border-radius:14px; background:#fee2e2; color:#991b1b; font-weight:900; text-align:center; }
 .ticket-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .ticket-title { margin:0; font-size:18px; font-weight:950; }
 .ticket-meta { margin:6px 0 0; color:var(--muted); font-size:13px; }
