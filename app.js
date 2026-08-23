@@ -3010,11 +3010,19 @@ function init() {
     if (isSupervisorPortal()) {
       loadSupervisorClosures();
     } else {
-      const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
-      if (cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
-        stateCache = cached;
-        renderTickets();
-      }
+    const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
+    if (cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
+      stateCache = cached;
+      void overlayPendingResolverStates(stateCache)
+        .then((pendingOverlay) => {
+          if (pendingOverlay.status) {
+            currentStatus = pendingOverlay.status;
+            updateStatusPill(currentStatus);
+          }
+        })
+        .catch((error) => console.warn("[OFFLINE] no se pudo aplicar la cola al inicio", error))
+        .finally(renderTickets);
+    }
       loadState();
       if (currentStatus !== "OFFLINE") {
         updateGps(currentStatus).catch(() => null);
