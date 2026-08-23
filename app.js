@@ -672,12 +672,16 @@ function isAssignedToMe(t) {
   return user && t.assigned_resolver_id === user.id;
 }
 
+function isTerminalTicket(t) {
+  return TERMINAL_STATES.includes(String(t?.state || "").toUpperCase());
+}
+
 function isPendingForMe(t) {
-  return t.assignment_state === "PENDING" && !TERMINAL_STATES.includes(t.state);
+  return t.assignment_state === "PENDING" && !isTerminalTicket(t);
 }
 
 function isAvailableTicket(t) {
-  return !t.assigned_resolver_id && !isPendingForMe(t) && !TERMINAL_STATES.includes(t.state);
+  return !t.assigned_resolver_id && !isPendingForMe(t) && !isTerminalTicket(t);
 }
 
 function alertBadgeClass(t) {
@@ -826,7 +830,7 @@ function saveKnownVoiceSessionIds() {
 
 function renderTickets() {
   const list = $("ticketsList");
-  const tickets = stateCache?.tickets || [];
+  const tickets = (stateCache?.tickets || []).filter((ticket) => !isTerminalTicket(ticket));
   const assigned = tickets.filter((t) => isAssignedToMe(t) || isPendingForMe(t));
   const available = tickets.filter((t) => isAvailableTicket(t));
 
@@ -2317,6 +2321,7 @@ async function loadState() {
     if (!SUPERVISOR_MODE) {
       const snapshotTickets = (data.tickets || [])
         .filter((ticket) => String(ticket.assigned_resolver_id || ticket.assignment_resolver_id || "") === String(user.id))
+        .filter((ticket) => !isTerminalTicket(ticket))
         .map((ticket) => Object.fromEntries([
           "id", "state", "priority", "alert_type", "title", "description", "latitude", "longitude", "accuracy",
           "created_at", "updated_at", "assigned_at", "assigned_resolver_id", "assignment_resolver_id", "assignment_state",
@@ -2352,6 +2357,7 @@ async function loadState() {
   } catch (err) {
     const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
     if (!SUPERVISOR_MODE && cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
+      cached.tickets = (cached.tickets || []).filter((ticket) => !isTerminalTicket(ticket));
       stateCache = cached;
       const pendingOverlay = await overlayPendingResolverStates(stateCache);
       if (pendingOverlay.status) {
@@ -3012,6 +3018,7 @@ function init() {
     } else {
     const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
     if (cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
+      cached.tickets = (cached.tickets || []).filter((ticket) => !isTerminalTicket(ticket));
       stateCache = cached;
       void overlayPendingResolverStates(stateCache)
         .then((pendingOverlay) => {

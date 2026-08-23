@@ -1,4 +1,4 @@
-const CACHE_NAME = "queltu-resolver-v13.7-city-offline-startup";
+const CACHE_NAME = "queltu-resolver-v13.8-city-active-case-filter";
 const APP_SHELL = [
   "/", "/index.html", "/app.js", "/styles.css", "/queltu-brand.css", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
