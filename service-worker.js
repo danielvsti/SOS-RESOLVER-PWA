@@ -1,4 +1,4 @@
-const CACHE_NAME = "queltu-resolver-v13.5-offline-evidence";
+const CACHE_NAME = "queltu-resolver-v13.6-city-offline-overlay";
 const APP_SHELL = [
   "/", "/index.html", "/app.js", "/styles.css", "/queltu-brand.css", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
