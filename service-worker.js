@@ -1,6 +1,6 @@
-const CACHE_NAME = "queltu-resolver-v13.9-sla-acceptance";
+const CACHE_NAME = "queltu-resolver-v18-inspection-shortcut-refresh";
 const APP_SHELL = [
-  "/", "/index.html", "/app.js", "/styles.css", "/queltu-brand.css", "/manifest.json",
+  "/", "/index.html", "/app.js?v=18-inspection-shortcut-refresh", "/styles.css?v=18-inspection-shortcut-refresh", "/queltu-brand.css?v=20260816-1", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
   "/icons/icon-192.png", "/icons/icon-512.png"
 ];

@@ -334,11 +334,18 @@ function isSupervisorPortal() {
 function syncFieldInspectionLauncher() {
   const shortcut = $("btnRoutineInspection");
   if (!shortcut) return;
-  const genericEnabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false
-    && stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false;
-  const enabled = Boolean(user) && !isSupervisorPortal() && (isMiningHseExperience() || genericEnabled);
-  const label = isMiningHseExperience() ? "Nueva inspección de rutina" : "Nueva inspección de terreno";
-  shortcut.classList.toggle("hidden", !enabled);
+  const resolverAppEnabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false;
+  const policyEnabled = stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false;
+  const visible = Boolean(user) && !isSupervisorPortal() && (isMiningHseExperience() || resolverAppEnabled);
+  const blockedByPolicy = visible && !isMiningHseExperience() && !policyEnabled;
+  const label = isMiningHseExperience()
+    ? "Nueva inspección de rutina"
+    : blockedByPolicy
+      ? "Inspecciones deshabilitadas por el Centro de Control"
+      : "Nueva inspección de terreno";
+  shortcut.classList.toggle("hidden", !visible);
+  shortcut.classList.toggle("inspection-disabled", blockedByPolicy);
+  shortcut.setAttribute("aria-disabled", String(blockedByPolicy));
   shortcut.setAttribute("aria-label", label);
   shortcut.title = label;
 }
@@ -3188,7 +3195,9 @@ function init() {
   $("btnSettings").addEventListener("click", openSettingsPanel);
   $("btnRoutineInspection")?.addEventListener("click", () => {
     if (isMiningHseExperience()) openRoutineInspectionPanel();
-    else openFieldInspectionPanel();
+    else if (stateCache?.platform_settings?.resolver_inspection_policy?.enabled === false) {
+      toast("Las inspecciones están deshabilitadas por la configuración del Centro de Control");
+    } else openFieldInspectionPanel();
   });
   $("btnCloseRoutineInspection")?.addEventListener("click", closeRoutineInspectionPanel);
   $("routineInspectionPanel")?.addEventListener("click", (event) => {
@@ -3273,6 +3282,14 @@ setInterval(() => void syncResolverOutbox(), 15000);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch((error) => console.warn("[PWA]", error));
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register("/service-worker.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch((error) => console.warn("[PWA]", error));
   });
 }
