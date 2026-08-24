@@ -79,6 +79,14 @@
           </div>
         </section>
 
+        <section id="fieldInspectionLauncher" class="card compact field-inspection-launcher hidden">
+          <div>
+            <span class="eyebrow">Inspección de terreno</span>
+            <p>Registra una revisión preventiva y, si detectas un hallazgo, genera una alerta georreferenciada para la Central.</p>
+          </div>
+          <button id="btnNewFieldInspection" class="inspection-action" type="button">🔎 Nueva inspección</button>
+        </section>
+
         <section class="tabs">
           <button class="tab active" data-tab="assigned" type="button">Mis casos <span id="assignedCount">0</span></button>
           <button class="tab" data-tab="available" type="button">Disponibles <span id="availableCount">0</span></button>
@@ -168,6 +176,65 @@
       </div>
     </div>
   </div>
+  <div id="fieldInspectionPanel" class="modal hidden">
+    <div class="modal-card field-inspection-card">
+      <button id="btnCloseFieldInspection" class="modal-close" type="button">×</button>
+      <div>
+        <span class="eyebrow">Inspección autónoma</span>
+        <h2>Registrar inspección de terreno</h2>
+        <p class="muted">La inspección queda trazada con resolutor, fecha y GPS. La alerta es opcional y se identifica como hallazgo de terreno.</p>
+      </div>
+
+      <div id="fieldInspectionStatus" class="notice hidden"></div>
+      <div class="inspection-form-grid">
+        <label>Título de la inspección
+          <input id="fieldInspectionTitle" maxlength="180" placeholder="Ej: Revisión preventiva de plaza" />
+        </label>
+        <label>Sector o lugar
+          <input id="fieldInspectionArea" maxlength="180" placeholder="Ej: Plaza, feria, inmueble o vía pública" />
+        </label>
+        <label>Resultado
+          <select id="fieldInspectionResult">
+            <option value="COMPLIANT">Sin hallazgos</option>
+            <option value="PARTIAL">Observación preventiva</option>
+            <option value="NON_COMPLIANT">Hallazgo requiere gestión</option>
+            <option value="NOT_EVALUATED">No evaluado</option>
+          </select>
+        </label>
+        <label>Puntaje de cumplimiento (opcional)
+          <input id="fieldInspectionScore" type="number" min="0" max="100" placeholder="0–100" />
+        </label>
+      </div>
+      <label>Antecedentes observados
+        <textarea id="fieldInspectionNotes" maxlength="5000" placeholder="Describe objetivamente lo inspeccionado, el hallazgo y cualquier medida inmediata..."></textarea>
+      </label>
+      <label>Evidencia opcional
+        <input id="fieldInspectionEvidence" type="file" accept="image/*,video/*,audio/*" capture="environment" />
+      </label>
+
+      <label class="inspection-alert-toggle"><input id="fieldInspectionCreateAlert" type="checkbox" /> <span><strong>Generar alerta visible en el mapa</strong><small>Úsalo cuando el hallazgo requiera seguimiento, despacho o resolución.</small></span></label>
+      <section id="fieldInspectionAlertFields" class="inspection-alert-fields hidden">
+        <label>Categoría autorizada
+          <select id="fieldInspectionCategory"></select>
+        </label>
+        <label>Título de la alerta
+          <input id="fieldInspectionAlertTitle" maxlength="180" placeholder="Ej: Riesgo detectado durante patrullaje" />
+        </label>
+        <label>Detalle para la Central
+          <textarea id="fieldInspectionAlertDescription" maxlength="3000" placeholder="Indica qué debe revisar o gestionar la Central..."></textarea>
+        </label>
+      </section>
+
+      <div class="inspection-gps-box">📍 <span id="fieldInspectionGps">La ubicación se capturará al guardar.</span></div>
+      <button id="btnSaveFieldInspection" class="primary full" type="button">Guardar inspección</button>
+
+      <section class="inspection-history-section">
+        <h3>Mis inspecciones recientes</h3>
+        <div id="fieldInspectionHistory" class="inspection-history"></div>
+      </section>
+    </div>
+  </div>
+
   <div id="hsePanel" class="modal hidden">
     <div class="modal-card hse-panel-card">
       <button id="btnCloseHsePanel" class="modal-close" type="button">×</button>
@@ -447,6 +514,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=13.9-sla-acceptance"></script>
+  <script src="app.js?v=16-field-inspections-sla"></script>
 </body>
 </html>
