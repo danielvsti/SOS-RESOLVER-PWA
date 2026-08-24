@@ -36,6 +36,7 @@ let activeFieldTicketId = null;
 let activeFieldMode = null;
 let activeHseTicketId = null;
 let activeHseData = null;
+let activeFieldInspectionData = null;
 let resolverActionDockTicketId = null;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -261,6 +262,15 @@ function escapeHtml(value) {
 
 function isMiningHseExperience() {
   return String(stateCache?.platform_settings?.vertical || "").toUpperCase() === "MINING";
+}
+
+function syncFieldInspectionLauncher() {
+  const launcher = $("fieldInspectionLauncher");
+  if (!launcher) return;
+  const enabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false
+    && stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false
+    && Boolean(user);
+  launcher.classList.toggle("hidden", !enabled);
 }
 
 function visibleTerm(key, fallback) {
@@ -546,6 +556,7 @@ function showLogin() {
   $("loginView")?.classList.remove("hidden");
   $("btnSettings")?.classList.add("hidden");
   updateResolverActionDock([]);
+  $("fieldInspectionLauncher")?.classList.add("hidden");
   updateStatusPill("OFFLINE");
   if ($("phoneInput")) $("phoneInput").value = "";
   if ($("loginMsg")) $("loginMsg").textContent = "";
@@ -1150,6 +1161,171 @@ function closeTicketModal() {
   if (ticketMap) {
     ticketMap.remove();
     ticketMap = null;
+  }
+}
+
+function fieldInspectionResultLabel(value) {
+  return ({
+    COMPLIANT: "Sin hallazgos",
+    PARTIAL: "Observación preventiva",
+    NON_COMPLIANT: "Requiere gestión",
+    NOT_EVALUATED: "No evaluado"
+  })[String(value || "").toUpperCase()] || value || "No evaluado";
+}
+
+function renderFieldInspectionHistory(inspections = []) {
+  const container = $("fieldInspectionHistory");
+  if (!container) return;
+  if (!inspections.length) {
+    container.innerHTML = '<div class="empty">Todavía no registras inspecciones.</div>';
+    return;
+  }
+  container.innerHTML = inspections.slice(0, 8).map(item => `
+    <article class="inspection-history-item">
+      <div><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(fieldInspectionResultLabel(item.result))}</span></div>
+      <small>${escapeHtml(formatResolverActivityTime(item.completed_at || item.created_at))}${item.area ? ` · ${escapeHtml(item.area)}` : ""}</small>
+      ${item.linked_ticket_id ? `<div class="inspection-ticket-link">🚨 Alerta #${escapeHtml(String(item.linked_ticket_id).slice(0, 8).toUpperCase())} · ${escapeHtml(stateLabel(item.ticket_state))}</div>` : '<div class="inspection-no-alert">Registro preventivo sin alerta</div>'}
+    </article>
+  `).join("");
+}
+
+function renderFieldInspectionCategories(categories = []) {
+  const select = $("fieldInspectionCategory");
+  if (!select) return;
+  select.innerHTML = categories.map(category => `
+    <option value="${escapeHtml(category.type)}">${escapeHtml(category.icon || "📝")} ${escapeHtml(category.title || category.type)}${category.visible_to_neighbor ? "" : " · solo resolutor"}</option>
+  `).join("");
+}
+
+function toggleFieldInspectionAlertFields() {
+  const checked = $("fieldInspectionCreateAlert")?.checked === true;
+  $("fieldInspectionAlertFields")?.classList.toggle("hidden", !checked);
+}
+
+async function openFieldInspectionPanel() {
+  const panel = $("fieldInspectionPanel");
+  if (!panel) return;
+  panel.classList.remove("hidden");
+  $("fieldInspectionStatus").classList.add("hidden");
+  $("fieldInspectionTitle").value = "";
+  $("fieldInspectionArea").value = "";
+  $("fieldInspectionNotes").value = "";
+  $("fieldInspectionScore").value = "";
+  $("fieldInspectionResult").value = "COMPLIANT";
+  $("fieldInspectionAlertTitle").value = "";
+  $("fieldInspectionAlertDescription").value = "";
+  $("fieldInspectionEvidence").value = "";
+  $("fieldInspectionCreateAlert").checked = false;
+  toggleFieldInspectionAlertFields();
+  const position = getLastKnownLatLon();
+  $("fieldInspectionGps").textContent = position
+    ? `${Number(position.latitude).toFixed(5)}, ${Number(position.longitude).toFixed(5)} · se actualizará al guardar`
+    : "La ubicación se capturará al guardar.";
+  $("fieldInspectionHistory").innerHTML = '<div class="empty">Cargando inspecciones...</div>';
+  try {
+    activeFieldInspectionData = await api("/resolver/field-inspections?limit=8");
+    renderFieldInspectionCategories(activeFieldInspectionData.categories || []);
+    renderFieldInspectionHistory(activeFieldInspectionData.inspections || []);
+    const allowAlert = activeFieldInspectionData.policy?.allow_alert_creation !== false && (activeFieldInspectionData.categories || []).length > 0;
+    $("fieldInspectionCreateAlert").disabled = !allowAlert;
+    if (!allowAlert) {
+      $("fieldInspectionCreateAlert").checked = false;
+      toggleFieldInspectionAlertFields();
+    }
+  } catch (error) {
+    $("fieldInspectionHistory").innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    toast(error.message);
+  }
+}
+
+function closeFieldInspectionPanel() {
+  $("fieldInspectionPanel")?.classList.add("hidden");
+  activeFieldInspectionData = null;
+}
+
+function inspectionEvidenceMediaType(file) {
+  const mime = String(file?.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("audio/")) return "audio";
+  return "video";
+}
+
+async function saveFieldInspection() {
+  const title = $("fieldInspectionTitle").value.trim();
+  const notes = $("fieldInspectionNotes").value.trim();
+  const createAlert = $("fieldInspectionCreateAlert").checked === true;
+  const category = $("fieldInspectionCategory").value;
+  if (!title) return toast("Escribe un título para la inspección.");
+  if (createAlert && !category) return toast("Selecciona la categoría del hallazgo.");
+  const button = $("btnSaveFieldInspection");
+  button.disabled = true;
+  button.textContent = "Capturando GPS...";
+  try {
+    const pos = await getLocation({ maximumAge: 3000 });
+    validatePositionQuality(pos);
+    currentPosition = pos;
+    const scoreRaw = $("fieldInspectionScore").value;
+    button.textContent = "Guardando inspección...";
+    const data = await api("/resolver/field-inspections", {
+      method: "POST",
+      body: JSON.stringify({
+        title,
+        area: $("fieldInspectionArea").value.trim() || null,
+        inspection_type: "FIELD_INSPECTION",
+        result: $("fieldInspectionResult").value,
+        score: scoreRaw === "" ? null : Number(scoreRaw),
+        notes: notes || null,
+        text_evidence: notes ? [{ text: notes, created_at: new Date().toISOString() }] : [],
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+        create_alert: createAlert,
+        alert_type: createAlert ? category : null,
+        alert_title: $("fieldInspectionAlertTitle").value.trim() || null,
+        alert_description: $("fieldInspectionAlertDescription").value.trim() || null
+      })
+    });
+
+    const evidenceFile = $("fieldInspectionEvidence").files?.[0] || null;
+    let evidenceWarning = null;
+    if (evidenceFile) {
+      if (evidenceFile.size > 25 * 1024 * 1024) {
+        evidenceWarning = "La inspección quedó guardada, pero la evidencia supera 25 MB y no se adjuntó.";
+      } else {
+        button.textContent = "Subiendo evidencia...";
+        try {
+          await api(`/resolver/field-inspections/${encodeURIComponent(data.inspection.id)}/evidence`, {
+            method: "POST",
+            body: JSON.stringify({
+              media_type: inspectionEvidenceMediaType(evidenceFile),
+              file_name: evidenceFile.name || `evidencia-${Date.now()}`,
+              data_url: await blobToDataUrl(evidenceFile)
+            })
+          });
+        } catch (error) {
+          evidenceWarning = `La inspección quedó guardada, pero la evidencia no pudo subirse: ${error.message}`;
+        }
+      }
+    }
+
+    const status = $("fieldInspectionStatus");
+    status.classList.remove("hidden");
+    status.innerHTML = data.ticket
+      ? `<strong>✅ Inspección y alerta creadas</strong><p>Ticket #${escapeHtml(String(data.ticket.id).slice(0, 8).toUpperCase())} visible para la Central.</p>`
+      : "<strong>✅ Inspección registrada</strong><p>No se generó una alerta operacional.</p>";
+    if (evidenceWarning) toast(evidenceWarning);
+    else toast(data.message || "Inspección registrada");
+    activeFieldInspectionData = await api("/resolver/field-inspections?limit=8");
+    renderFieldInspectionHistory(activeFieldInspectionData.inspections || []);
+    await loadState();
+    $("fieldInspectionTitle").value = "";
+    $("fieldInspectionNotes").value = "";
+    $("fieldInspectionEvidence").value = "";
+  } catch (error) {
+    toast(error.message || "No fue posible registrar la inspección");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Guardar inspección";
   }
 }
 
@@ -1793,6 +1969,7 @@ async function loadState() {
     }
     await notifyNewAssignedTickets(data.tickets || []);
     await notifyIncomingVoiceCalls(data.tickets || []);
+    syncFieldInspectionLauncher();
     renderTickets();
   } catch (err) {
     const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
@@ -1803,6 +1980,7 @@ async function loadState() {
         currentStatus = pendingOverlay.status;
         updateStatusPill(currentStatus);
       }
+      syncFieldInspectionLauncher();
       renderTickets();
       toast("Sin conexión: mostrando casos asignados guardados en este dispositivo");
       await renderResolverConnectivity();
@@ -2074,6 +2252,19 @@ function init() {
   $("btnBusy").addEventListener("click", () => setStatus("BUSY"));
   $("btnOffline").addEventListener("click", () => setStatus("OFFLINE"));
   $("btnUpdateGps").addEventListener("click", () => updateGps(currentStatus === "OFFLINE" ? "AVAILABLE" : currentStatus).then(() => toast("GPS actualizado")).catch((err) => toast(err.message)));
+  $("btnNewFieldInspection")?.addEventListener("click", openFieldInspectionPanel);
+  $("btnCloseFieldInspection")?.addEventListener("click", closeFieldInspectionPanel);
+  $("btnSaveFieldInspection")?.addEventListener("click", saveFieldInspection);
+  $("fieldInspectionCreateAlert")?.addEventListener("change", toggleFieldInspectionAlertFields);
+  $("fieldInspectionResult")?.addEventListener("change", () => {
+    if ($("fieldInspectionResult").value === "NON_COMPLIANT" && !$("fieldInspectionCreateAlert").disabled) {
+      $("fieldInspectionCreateAlert").checked = true;
+      toggleFieldInspectionAlertFields();
+    }
+  });
+  $("fieldInspectionPanel")?.addEventListener("click", (event) => {
+    if (event.target === $("fieldInspectionPanel")) closeFieldInspectionPanel();
+  });
   $("btnCloseModal").addEventListener("click", closeTicketModal);
   $("btnCloseFieldPanel").addEventListener("click", closeFieldPanel);
   $("btnSendFieldText").addEventListener("click", sendFieldText);
@@ -2135,6 +2326,7 @@ function init() {
     const cached = JSON.parse(localStorage.getItem(RESOLVER_STATE_SNAPSHOT_KEY) || "null");
     if (cached?.saved_at && Date.now() - Number(cached.saved_at) < 12 * 60 * 60 * 1000) {
       stateCache = cached;
+      syncFieldInspectionLauncher();
       renderTickets();
     }
     loadState();
