@@ -3118,7 +3118,14 @@ function startPolling() {
   pollTimer = setInterval(isSupervisorPortal() ? loadSupervisorClosures : loadState, POLL_MS);
 }
 
+function renderAppVersion() {
+  const appScript = [...document.scripts].find((script) => script.src.includes("/app.js"));
+  const release = appScript ? new URL(appScript.src).searchParams.get("v") : null;
+  if ($("appVersion")) $("appVersion").textContent = `Resolutor · ${release || "desarrollo local"}`;
+}
+
 function init() {
+  renderAppVersion();
   if (SUPERVISOR_MODE) {
     $("loginTitle").textContent = "Ingreso Supervisor HSE";
     $("loginSubtitle").textContent = "Revisa y decide solicitudes de cierre del Centro de Control asignado a tu cuenta.";
