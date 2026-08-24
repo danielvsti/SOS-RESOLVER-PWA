@@ -265,12 +265,12 @@ function isMiningHseExperience() {
 }
 
 function syncFieldInspectionLauncher() {
-  const launcher = $("fieldInspectionLauncher");
-  if (!launcher) return;
+  const shortcut = $("btnFieldInspection");
+  if (!shortcut) return;
   const enabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false
     && stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false
     && Boolean(user);
-  launcher.classList.toggle("hidden", !enabled);
+  shortcut.classList.toggle("hidden", !enabled);
 }
 
 function visibleTerm(key, fallback) {
@@ -555,8 +555,8 @@ function showLogin() {
   $("supervisorView")?.classList.add("hidden");
   $("loginView")?.classList.remove("hidden");
   $("btnSettings")?.classList.add("hidden");
+  $("btnFieldInspection")?.classList.add("hidden");
   updateResolverActionDock([]);
-  $("fieldInspectionLauncher")?.classList.add("hidden");
   updateStatusPill("OFFLINE");
   if ($("phoneInput")) $("phoneInput").value = "";
   if ($("loginMsg")) $("loginMsg").textContent = "";
@@ -2155,6 +2155,7 @@ function showSupervisor() {
   $("mainView")?.classList.add("hidden");
   $("supervisorView")?.classList.remove("hidden");
   $("btnSettings")?.classList.add("hidden");
+  $("btnFieldInspection")?.classList.add("hidden");
   updateResolverActionDock([]);
   $("supervisorName").textContent = user?.full_name || "Supervisor HSE";
   $("supervisorCenter").textContent = user?.control_center_name || user?.control_center_code || "Centro de Control";
@@ -2252,7 +2253,7 @@ function init() {
   $("btnBusy").addEventListener("click", () => setStatus("BUSY"));
   $("btnOffline").addEventListener("click", () => setStatus("OFFLINE"));
   $("btnUpdateGps").addEventListener("click", () => updateGps(currentStatus === "OFFLINE" ? "AVAILABLE" : currentStatus).then(() => toast("GPS actualizado")).catch((err) => toast(err.message)));
-  $("btnNewFieldInspection")?.addEventListener("click", openFieldInspectionPanel);
+  $("btnFieldInspection")?.addEventListener("click", openFieldInspectionPanel);
   $("btnCloseFieldInspection")?.addEventListener("click", closeFieldInspectionPanel);
   $("btnSaveFieldInspection")?.addEventListener("click", saveFieldInspection);
   $("fieldInspectionCreateAlert")?.addEventListener("change", toggleFieldInspectionAlertFields);

@@ -30,7 +30,10 @@
           <span id="brandSubtitle">Respuesta en terreno · Resolutor</span>
         </div>
       </div>
-      <button id="btnSettings" class="ghost hidden" type="button">⚙️</button>
+      <div class="topbar-actions">
+        <button id="btnFieldInspection" class="ghost inspection-shortcut hidden" type="button" aria-label="Nueva inspección de terreno" title="Nueva inspección de terreno">🔎</button>
+        <button id="btnSettings" class="ghost hidden" type="button" aria-label="Configuración" title="Configuración">⚙️</button>
+      </div>
     </header>
 
     <main>
@@ -74,14 +77,6 @@
             </div>
             <button id="btnUpdateGps" class="secondary small" type="button">Actualizar GPS</button>
           </div>
-        </section>
-
-        <section id="fieldInspectionLauncher" class="card compact field-inspection-launcher hidden">
-          <div>
-            <span class="eyebrow">Inspección de terreno</span>
-            <p>Registra una revisión preventiva y, si detectas un hallazgo, genera una alerta georreferenciada para la Central.</p>
-          </div>
-          <button id="btnNewFieldInspection" class="inspection-action" type="button">🔎 Nueva inspección</button>
         </section>
 
         <section class="tabs">
@@ -409,6 +404,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=15-field-inspections"></script>
+  <script src="app.js?v=17-unified-inspection-shortcut"></script>
 </body>
 </html>
