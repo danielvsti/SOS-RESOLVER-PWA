@@ -2250,7 +2250,14 @@ function startPolling() {
   pollTimer = setInterval(loadState, POLL_MS);
 }
 
+function renderAppVersion() {
+  const appScript = [...document.scripts].find((script) => script.src.includes("/app.js"));
+  const release = appScript ? new URL(appScript.src).searchParams.get("v") : null;
+  if ($("appVersion")) $("appVersion").textContent = `Resolutor · ${release || "desarrollo local"}`;
+}
+
 function init() {
+  renderAppVersion();
   configureExperienceMode();
   void renderResolverConnectivity();
   $("btnLogin").addEventListener("click", login);
