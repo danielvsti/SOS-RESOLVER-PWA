@@ -31,30 +31,6 @@ label { display:block; font-size:13px; color:var(--muted); margin:14px 0 6px; fo
 input, textarea { width:100%; border:1px solid var(--line); border-radius:14px; padding:14px; font-size:16px; outline:none; font-family:inherit; }
 textarea { min-height:120px; resize:vertical; }
 
-.field-inspection-launcher {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 14px;
-  align-items: center;
-  border: 2px solid #bfdbfe;
-  background: linear-gradient(145deg, #ffffff, #eff6ff);
-}
-
-.field-inspection-launcher p {
-  margin: 4px 0 0;
-  color: #475569;
-}
-
-.inspection-action {
-  border: 0;
-  border-radius: 16px;
-  padding: 14px 18px;
-  color: #fff;
-  background: linear-gradient(145deg, #2563eb, #1d4ed8);
-  font-weight: 900;
-  white-space: nowrap;
-}
-
 .field-inspection-card {
   max-width: 760px;
 }
@@ -147,12 +123,8 @@ textarea { min-height:120px; resize:vertical; }
 }
 
 @media (max-width: 640px) {
-  .field-inspection-launcher,
   .inspection-form-grid {
     grid-template-columns: 1fr;
-  }
-  .inspection-action {
-    width: 100%;
   }
 }
 button { border:0; border-radius:14px; padding:13px 15px; font-weight:850; cursor:pointer; font-size:15px; }

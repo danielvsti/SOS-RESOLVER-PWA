@@ -332,12 +332,15 @@ function isSupervisorPortal() {
 }
 
 function syncFieldInspectionLauncher() {
-  const launcher = $("fieldInspectionLauncher");
-  if (!launcher) return;
-  const enabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false
-    && stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false
-    && Boolean(user);
-  launcher.classList.toggle("hidden", !enabled);
+  const shortcut = $("btnRoutineInspection");
+  if (!shortcut) return;
+  const genericEnabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false
+    && stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false;
+  const enabled = Boolean(user) && !isSupervisorPortal() && (isMiningHseExperience() || genericEnabled);
+  const label = isMiningHseExperience() ? "Nueva inspección de rutina" : "Nueva inspección de terreno";
+  shortcut.classList.toggle("hidden", !enabled);
+  shortcut.setAttribute("aria-label", label);
+  shortcut.title = label;
 }
 
 function visibleTerm(key, fallback) {
@@ -644,7 +647,7 @@ function showLogin() {
   $("supervisorView")?.classList.add("hidden");
   $("loginView")?.classList.remove("hidden");
   $("btnSettings")?.classList.add("hidden");
-  $("fieldInspectionLauncher")?.classList.add("hidden");
+  $("btnRoutineInspection")?.classList.add("hidden");
   updateStatusPill("OFFLINE");
   if ($("phoneInput")) $("phoneInput").value = "";
   if ($("loginMsg")) $("loginMsg").textContent = "";
@@ -2989,7 +2992,7 @@ async function saveRoutineInspection() {
 
 function updateHeaderActions() {
   $("btnSettings")?.classList.toggle("hidden", isSupervisorPortal());
-  $("btnRoutineInspection")?.classList.toggle("hidden", isSupervisorPortal() || !isMiningHseExperience());
+  syncFieldInspectionLauncher();
 }
 
 
@@ -3119,7 +3122,6 @@ function init() {
   $("btnBusy").addEventListener("click", () => setStatus("BUSY"));
   $("btnOffline").addEventListener("click", () => setStatus("OFFLINE"));
   $("btnUpdateGps").addEventListener("click", () => updateGps(currentStatus === "OFFLINE" ? "AVAILABLE" : currentStatus).then(() => toast("GPS actualizado")).catch((err) => toast(err.message)));
-  $("btnNewFieldInspection")?.addEventListener("click", openFieldInspectionPanel);
   $("btnCloseFieldInspection")?.addEventListener("click", closeFieldInspectionPanel);
   $("btnSaveFieldInspection")?.addEventListener("click", saveFieldInspection);
   $("fieldInspectionCreateAlert")?.addEventListener("change", toggleFieldInspectionAlertFields);
@@ -3184,7 +3186,10 @@ function init() {
   }));
 
   $("btnSettings").addEventListener("click", openSettingsPanel);
-  $("btnRoutineInspection")?.addEventListener("click", openRoutineInspectionPanel);
+  $("btnRoutineInspection")?.addEventListener("click", () => {
+    if (isMiningHseExperience()) openRoutineInspectionPanel();
+    else openFieldInspectionPanel();
+  });
   $("btnCloseRoutineInspection")?.addEventListener("click", closeRoutineInspectionPanel);
   $("routineInspectionPanel")?.addEventListener("click", (event) => {
     if (event.target === $("routineInspectionPanel")) closeRoutineInspectionPanel();
