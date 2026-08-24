@@ -1,6 +1,6 @@
-const CACHE_NAME = "queltu-resolver-v14-offline-overlay";
+const CACHE_NAME = "queltu-resolver-v18-inspection-shortcut-refresh";
 const APP_SHELL = [
-  "/", "/index.html", "/app.js", "/styles.css", "/queltu-brand.css", "/manifest.json",
+  "/", "/index.html", "/app.js?v=18-inspection-shortcut-refresh", "/styles.css?v=18-inspection-shortcut-refresh", "/queltu-brand.css?v=20260716-2", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
   "/icons/icon-192.png", "/icons/icon-512.png"
 ];

@@ -24,6 +24,7 @@ body { padding-bottom: env(safe-area-inset-bottom); }
 .topbar-actions { display:flex; align-items:center; gap:8px; }
 .topbar-actions .ghost { width:44px; height:44px; padding:0; display:grid; place-items:center; font-size:21px; }
 .inspection-shortcut { background:linear-gradient(180deg,rgba(37,99,235,.9),rgba(29,78,216,.94)); border-color:rgba(147,197,253,.75); box-shadow:0 8px 20px rgba(37,99,235,.25); }
+.inspection-shortcut.inspection-disabled { opacity:.62; filter:grayscale(.45); }
 main { padding:16px; max-width:860px; margin:0 auto; }
 .card, .status-card { background:var(--card); border:1px solid var(--line); border-radius:22px; padding:18px; box-shadow:var(--shadow); margin-bottom:14px; }
 .login-card h1 { margin:0 0 8px; }

@@ -267,10 +267,18 @@ function isMiningHseExperience() {
 function syncFieldInspectionLauncher() {
   const shortcut = $("btnFieldInspection");
   if (!shortcut) return;
-  const enabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false
-    && stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false
-    && Boolean(user);
-  shortcut.classList.toggle("hidden", !enabled);
+  const resolverAppEnabled = stateCache?.platform_settings?.features?.resolver_app_enabled !== false;
+  const policyEnabled = stateCache?.platform_settings?.resolver_inspection_policy?.enabled !== false;
+  const visible = Boolean(user) && resolverAppEnabled;
+  const blockedByPolicy = visible && !policyEnabled;
+  const label = blockedByPolicy
+    ? "Inspecciones deshabilitadas por el Centro de Control"
+    : "Nueva inspección de terreno";
+  shortcut.classList.toggle("hidden", !visible);
+  shortcut.classList.toggle("inspection-disabled", blockedByPolicy);
+  shortcut.setAttribute("aria-disabled", String(blockedByPolicy));
+  shortcut.setAttribute("aria-label", label);
+  shortcut.title = label;
 }
 
 function visibleTerm(key, fallback) {
@@ -2253,7 +2261,11 @@ function init() {
   $("btnBusy").addEventListener("click", () => setStatus("BUSY"));
   $("btnOffline").addEventListener("click", () => setStatus("OFFLINE"));
   $("btnUpdateGps").addEventListener("click", () => updateGps(currentStatus === "OFFLINE" ? "AVAILABLE" : currentStatus).then(() => toast("GPS actualizado")).catch((err) => toast(err.message)));
-  $("btnFieldInspection")?.addEventListener("click", openFieldInspectionPanel);
+  $("btnFieldInspection")?.addEventListener("click", () => {
+    if (stateCache?.platform_settings?.resolver_inspection_policy?.enabled === false) {
+      toast("Las inspecciones están deshabilitadas por la configuración del Centro de Control");
+    } else openFieldInspectionPanel();
+  });
   $("btnCloseFieldInspection")?.addEventListener("click", closeFieldInspectionPanel);
   $("btnSaveFieldInspection")?.addEventListener("click", saveFieldInspection);
   $("fieldInspectionCreateAlert")?.addEventListener("change", toggleFieldInspectionAlertFields);
@@ -2353,6 +2365,14 @@ setInterval(() => void syncResolverOutbox(), 15000);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch((error) => console.warn("[PWA]", error));
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register("/service-worker.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch((error) => console.warn("[PWA]", error));
   });
 }
