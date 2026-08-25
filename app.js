@@ -2983,6 +2983,17 @@ function closeRoutineInspectionPanel() {
   closeRoutineEvidenceCapture();
   $("routineInspectionPanel")?.classList.add("hidden");
   $("routineInspectionToolbar")?.classList.add("hidden");
+  document.body.classList.remove("inspection-keyboard-active");
+}
+
+function syncRoutineInspectionKeyboardState(event) {
+  const panel = $("routineInspectionPanel");
+  const target = event?.target;
+  const isEditable = target?.matches?.("input, textarea, select, [contenteditable='true']");
+  document.body.classList.toggle(
+    "inspection-keyboard-active",
+    Boolean(panel && !panel.classList.contains("hidden") && isEditable)
+  );
 }
 
 async function toggleRoutineInspectionDockAudio() {
@@ -3475,6 +3486,11 @@ function init() {
   $("routineInspectionAudioTool")?.addEventListener("click", toggleRoutineInspectionDockAudio);
   $("routineInspectionPhotoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("image"));
   $("routineInspectionVideoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("video"));
+  document.addEventListener("focusin", syncRoutineInspectionKeyboardState);
+  document.addEventListener("focusout", () => requestAnimationFrame(() => {
+    const active = document.activeElement;
+    syncRoutineInspectionKeyboardState({ target:active });
+  }));
   $("btnCloseRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);
   $("btnCancelRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);
   $("btnConfirmRoutineEvidence")?.addEventListener("click", confirmRoutineEvidence);

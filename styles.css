@@ -211,6 +211,8 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .routine-tools-footer .routine-tool span { font-size:20px; }
 .routine-tools-footer .routine-tool small { font-size:10px; line-height:1.1; white-space:nowrap; }
 .routine-recording-banner { position:fixed; left:50%; bottom:calc(56px + env(safe-area-inset-bottom)); z-index:72; display:flex; align-items:center; justify-content:center; gap:12px; width:min(calc(100% - 24px),696px); min-height:54px; padding:10px 16px; transform:translateX(-50%); border-radius:18px; background:#e5222a; color:#fff; box-shadow:0 10px 28px rgba(229,34,42,.38); font-size:18px; font-weight:900; }
+.inspection-keyboard-active .routine-tools-footer { padding-bottom:3px; }
+.inspection-keyboard-active .routine-recording-banner { bottom:56px; }
 .routine-recording-banner .rec-dot { flex:0 0 auto; }
 #routineRecordingTimer { font-variant-numeric:tabular-nums; }
 .routine-tool { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:76px; padding:10px; border:1px solid #cbd5e1; background:#fff; color:#0f172a; box-shadow:0 8px 18px rgba(15,23,42,.06); }
