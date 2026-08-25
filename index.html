@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#151A1D" />
   <title>QUELTU Respuesta</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css?v=21-mobile-status-controls" />
+  <link rel="stylesheet" href="styles.css?v=22-inspection-evidence-footer" />
   <link rel="stylesheet" href="queltu-brand.css?v=20260816-1" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -368,12 +368,6 @@
             </div>
             <span id="routineInspectionEvidenceStatus" class="routine-evidence-count">Sin evidencia</span>
           </div>
-          <div class="routine-tools" role="toolbar" aria-label="Herramientas de evidencia">
-            <button id="routineInspectionNoteTool" class="routine-tool" type="button"><span>📝</span><small>Nota</small></button>
-            <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
-            <button id="routineInspectionPhotoTool" class="routine-tool" type="button"><span>📷</span><small>Foto</small></button>
-            <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
-          </div>
           <div id="routineInspectionEvidenceList" class="routine-evidence-list"></div>
         </div>
 
@@ -397,6 +391,13 @@
         </div>
         <div id="routineInspectionRecentList" class="routine-recent-list"><p class="muted">Aún no has registrado inspecciones.</p></div>
       </section>
+
+      <div class="routine-tools routine-tools-footer" role="toolbar" aria-label="Agregar evidencia a la inspección">
+        <button id="routineInspectionNoteTool" class="routine-tool" type="button"><span>📝</span><small>Nota</small></button>
+        <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
+        <button id="routineInspectionPhotoTool" class="routine-tool" type="button"><span>📷</span><small>Foto</small></button>
+        <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
+      </div>
     </div>
   </div>
 
