@@ -2941,6 +2941,7 @@ function openRoutineInspectionPanel() {
   renderRoutineInspectionEvidence();
   setRoutineInspectionMessage("");
   $("routineInspectionPanel")?.classList.remove("hidden");
+  $("routineInspectionToolbar")?.classList.remove("hidden");
   void loadRoutineInspections();
   setTimeout(() => $("routineInspectionTitle")?.focus(), 120);
 }
@@ -2949,6 +2950,7 @@ function closeRoutineInspectionPanel() {
   if (routineInspectionRecorder?.state === "recording") routineInspectionRecorder.stop();
   closeRoutineEvidenceCapture();
   $("routineInspectionPanel")?.classList.add("hidden");
+  $("routineInspectionToolbar")?.classList.add("hidden");
 }
 
 async function toggleRoutineInspectionAudio() {

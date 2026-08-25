@@ -392,13 +392,14 @@
         <div id="routineInspectionRecentList" class="routine-recent-list"><p class="muted">Aún no has registrado inspecciones.</p></div>
       </section>
 
-      <div class="routine-tools routine-tools-footer" role="toolbar" aria-label="Agregar evidencia a la inspección">
-        <button id="routineInspectionNoteTool" class="routine-tool" type="button"><span>📝</span><small>Nota</small></button>
-        <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
-        <button id="routineInspectionPhotoTool" class="routine-tool" type="button"><span>📷</span><small>Foto</small></button>
-        <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
-      </div>
     </div>
+  </div>
+
+  <div id="routineInspectionToolbar" class="routine-tools routine-tools-footer hidden" role="toolbar" aria-label="Agregar evidencia a la inspección">
+    <button id="routineInspectionNoteTool" class="routine-tool" type="button"><span>📝</span><small>Nota</small></button>
+    <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
+    <button id="routineInspectionPhotoTool" class="routine-tool" type="button"><span>📷</span><small>Foto</small></button>
+    <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
   </div>
 
   <div id="routineEvidencePanel" class="modal routine-evidence-modal hidden">
@@ -534,6 +535,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=20-classified-field-inspections"></script>
+  <script src="app.js?v=21-screen-anchored-inspection-footer"></script>
 </body>
 </html>
