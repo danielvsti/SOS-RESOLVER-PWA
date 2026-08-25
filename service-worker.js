@@ -1,6 +1,6 @@
-const CACHE_NAME = "queltu-resolver-v27-compact-inspection-keyboard";
+const CACHE_NAME = "queltu-resolver-v28-diagnostic-release-version";
 const APP_SHELL = [
-  "/", "/index.html", "/app.js?v=24-compact-inspection-keyboard", "/styles.css?v=25-compact-inspection-keyboard", "/queltu-brand.css?v=20260816-1", "/manifest.json",
+  "/", "/index.html", "/app.js?v=25-diagnostic-release-version", "/styles.css?v=25-compact-inspection-keyboard", "/queltu-brand.css?v=20260816-1", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
   "/icons/icon-192.png", "/icons/icon-512.png"
 ];

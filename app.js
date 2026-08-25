@@ -1,5 +1,7 @@
 const SOS_CONFIG = window.SOS_CONFIG || {};
 const API = SOS_CONFIG.API_BASE || "https://api.queltu.com";
+const APP_RELEASE_VERSION = SOS_CONFIG.APP_RELEASE_VERSION || "4.2.13";
+const APP_RELEASE_BUILD = SOS_CONFIG.APP_RELEASE_BUILD || "4213";
 const RESOLVER_TOKEN_KEY = "sos_resolver_session_token";
 const HSE_SUPERVISOR_TOKEN_KEY = "queltu_hse_supervisor_session_token";
 const HSE_SUPERVISOR_USER_KEY = "queltu_hse_supervisor_user";
@@ -3393,8 +3395,9 @@ function startPolling() {
 
 function renderAppVersion() {
   const appScript = [...document.scripts].find((script) => script.src.includes("/app.js"));
-  const release = appScript ? new URL(appScript.src).searchParams.get("v") : null;
-  if ($("appVersion")) $("appVersion").textContent = `Resolutor · ${release || "desarrollo local"}`;
+  const webRevision = appScript ? new URL(appScript.src).searchParams.get("v") : null;
+  if ($("appVersion")) $("appVersion").textContent = `Resolutor ${APP_RELEASE_VERSION} (${APP_RELEASE_BUILD})`;
+  if ($("webRevision")) $("webRevision").textContent = webRevision || "desarrollo local";
 }
 
 function init() {
