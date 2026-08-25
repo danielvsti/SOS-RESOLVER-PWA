@@ -332,19 +332,32 @@
     <div class="modal-card routine-inspection-card">
       <button id="btnCloseRoutineInspection" class="modal-close" type="button" aria-label="Cerrar">×</button>
       <header class="routine-inspection-heading">
-        <span class="eyebrow">Seguridad operacional</span>
-        <h2>Inspección de rutina</h2>
-        <p>Registra un recorrido preventivo independiente de los casos y emergencias.</p>
+        <span id="routineInspectionEyebrow" class="eyebrow">Seguridad operacional</span>
+        <h2 id="routineInspectionHeading">Inspección de rutina</h2>
+        <p id="routineInspectionIntro">Registra un recorrido preventivo independiente de los casos y emergencias.</p>
       </header>
 
       <section class="routine-inspection-form">
-        <label for="routineInspectionTitle">Título de la inspección</label>
+        <div id="routineCityClassification" class="routine-city-classification hidden">
+          <label for="routineInspectionCategory">Categoría de la inspección o hallazgo</label>
+          <select id="routineInspectionCategory"></select>
+          <p class="muted tiny">Se muestran únicamente las categorías habilitadas por el administrador de este Centro de Control.</p>
+        </div>
+
+        <label id="routineInspectionTitleLabel" for="routineInspectionTitle">Título de la inspección</label>
         <input id="routineInspectionTitle" type="text" maxlength="180" placeholder="Ej. Inspección preoperacional del nivel 850" />
 
-        <label for="routineInspectionArea">Área de trabajo</label>
-        <select id="routineInspectionArea"></select>
+        <div id="routineMiningAreaField">
+          <label for="routineInspectionArea">Área de trabajo</label>
+          <select id="routineInspectionArea"></select>
+        </div>
 
-        <label for="routineInspectionNotes">Resumen general (opcional)</label>
+        <div id="routineCityAreaField" class="hidden">
+          <label for="routineInspectionLocation">Lugar o referencia (opcional)</label>
+          <input id="routineInspectionLocation" type="text" maxlength="180" placeholder="Ej. Plaza, feria, inmueble o vía pública" />
+        </div>
+
+        <label id="routineInspectionNotesLabel" for="routineInspectionNotes">Resumen general (opcional)</label>
         <textarea id="routineInspectionNotes" maxlength="5000" placeholder="Síntesis de la inspección. Agrega cada hallazgo desde la bitácora de evidencias..."></textarea>
 
         <div class="routine-evidence-block">
@@ -358,10 +371,17 @@
           <div class="routine-tools" role="toolbar" aria-label="Herramientas de evidencia">
             <button id="routineInspectionNoteTool" class="routine-tool" type="button"><span>📝</span><small>Nota</small></button>
             <button id="routineInspectionAudioTool" class="routine-tool" type="button"><span>🎙️</span><small>Audio</small></button>
+            <button id="routineInspectionPhotoTool" class="routine-tool" type="button"><span>📷</span><small>Foto</small></button>
             <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
           </div>
           <div id="routineInspectionEvidenceList" class="routine-evidence-list"></div>
         </div>
+
+        <label id="routineInspectionAlertToggle" class="inspection-alert-toggle hidden">
+          <input id="routineInspectionCreateAlert" type="checkbox" />
+          <span><strong>Crear alerta georreferenciada en el mapa</strong><small>Actívalo cuando el hallazgo requiera intervención, seguimiento o despacho de otro equipo.</small></span>
+        </label>
+        <div id="routineInspectionGps" class="inspection-gps-box hidden">📍 La ubicación se capturará al guardar.</div>
 
         <button id="btnSaveRoutineInspection" class="primary routine-save" type="button">Finalizar y guardar inspección</button>
         <p id="routineInspectionMsg" class="msg routine-inspection-msg" aria-live="polite"></p>
@@ -401,6 +421,13 @@
         </div>
         <audio id="routineEvidenceAudioPreview" class="routine-media-preview hidden" controls preload="metadata"></audio>
         <button id="btnRoutineEvidenceRecord" class="danger" type="button">Iniciar grabación</button>
+      </section>
+
+      <section id="routineEvidencePhotoMode" class="routine-capture-mode hidden">
+        <p class="muted">Toma una fotografía o selecciónala. Podrás revisarla antes de agregarla.</p>
+        <img id="routineEvidencePhotoPreview" class="routine-media-preview hidden" alt="Vista previa de la fotografía" />
+        <button id="btnRoutineEvidencePickPhoto" class="primary" type="button">Tomar o seleccionar fotografía</button>
+        <input id="routineEvidencePhotoInput" class="hidden" type="file" accept="image/*" capture="environment" />
       </section>
 
       <section id="routineEvidenceVideoMode" class="routine-capture-mode hidden">
@@ -506,6 +533,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=19-inspection-shortcut-diagnostic"></script>
+  <script src="app.js?v=20-classified-field-inspections"></script>
 </body>
 </html>

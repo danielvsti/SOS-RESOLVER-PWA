@@ -2684,6 +2684,11 @@ function releaseRoutineInspectionPreview() {
     element.load?.();
     element.classList.add("hidden");
   });
+  const photo = $("routineEvidencePhotoPreview");
+  if (photo) {
+    photo.removeAttribute("src");
+    photo.classList.add("hidden");
+  }
 }
 
 function stopRoutineInspectionRecorder() {
@@ -2696,7 +2701,11 @@ function stopRoutineInspectionRecorder() {
 function showRoutineInspectionMediaPreview(blob, mode) {
   releaseRoutineInspectionPreview();
   if (!blob) return;
-  const element = mode === "audio" ? $("routineEvidenceAudioPreview") : $("routineEvidenceVideoPreview");
+  const element = mode === "audio"
+    ? $("routineEvidenceAudioPreview")
+    : mode === "image"
+      ? $("routineEvidencePhotoPreview")
+      : $("routineEvidenceVideoPreview");
   if (!element) return;
   routineInspectionPreviewUrl = URL.createObjectURL(blob);
   element.src = routineInspectionPreviewUrl;
@@ -2714,7 +2723,7 @@ function setRoutineEvidenceConfirmEnabled(enabled) {
 }
 
 function openRoutineEvidenceCapture(mode, index = -1) {
-  if (!['text', 'audio', 'video'].includes(mode)) return;
+  if (!["text", "audio", "image", "video"].includes(mode)) return;
   if (routineInspectionRecorder?.state === "recording") routineInspectionRecorder.stop();
   stopRoutineInspectionRecorder();
   releaseRoutineInspectionPreview();
@@ -2726,15 +2735,18 @@ function openRoutineEvidenceCapture(mode, index = -1) {
 
   $("routineEvidenceTextMode")?.classList.toggle("hidden", mode !== "text");
   $("routineEvidenceAudioMode")?.classList.toggle("hidden", mode !== "audio");
+  $("routineEvidencePhotoMode")?.classList.toggle("hidden", mode !== "image");
   $("routineEvidenceVideoMode")?.classList.toggle("hidden", mode !== "video");
   const labels = {
     text:[existing ? "Editar nota" : "Agregar nota", "Registra un hallazgo independiente dentro de la bitácora."],
     audio:[existing ? "Revisar o reemplazar audio" : "Agregar audio", "Graba y escucha el audio antes de incorporarlo."],
+    image:[existing ? "Revisar o reemplazar fotografía" : "Agregar fotografía", "Toma una foto y revísala antes de incorporarla."],
     video:[existing ? "Revisar o reemplazar video" : "Agregar video", "Graba o selecciona un video y revísalo antes de incorporarlo."]
   };
   $("routineEvidenceModalTitle").textContent = labels[mode][0];
   $("routineEvidenceModalSubtitle").textContent = labels[mode][1];
   $("routineEvidenceText").value = mode === "text" ? String(existing?.text || "") : "";
+  if ($("routineEvidencePhotoInput")) $("routineEvidencePhotoInput").value = "";
   if ($("routineEvidenceVideoInput")) $("routineEvidenceVideoInput").value = "";
   if ($("btnRoutineEvidenceRecord")) $("btnRoutineEvidenceRecord").textContent = existing ? "Reemplazar grabación" : "Iniciar grabación";
   if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = existing ? "Audio listo para revisar" : "Listo para grabar";
@@ -2776,7 +2788,7 @@ function confirmRoutineEvidence() {
   else routineInspectionEvidence.push(evidence);
   renderRoutineInspectionEvidence();
   closeRoutineEvidenceCapture();
-  toast(`${mode === "text" ? "Nota" : mode === "audio" ? "Audio" : "Video"} agregado a la bitácora`);
+  toast(`${mode === "text" ? "Nota" : mode === "audio" ? "Audio" : mode === "image" ? "Fotografía" : "Video"} agregado a la bitácora`);
 }
 
 function renderRoutineInspectionEvidence() {
@@ -2788,8 +2800,8 @@ function renderRoutineInspectionEvidence() {
     : "Sin evidencia";
   list.innerHTML = routineInspectionEvidence.map((item, index) => {
     const kind = routineEvidenceKind(item);
-    const icon = kind === "text" ? "📝" : kind === "audio" ? "🎙️" : "📹";
-    const title = kind === "text" ? "Nota de terreno" : kind === "audio" ? "Nota de audio" : "Video de terreno";
+    const icon = kind === "text" ? "📝" : kind === "audio" ? "🎙️" : kind === "image" ? "📷" : "📹";
+    const title = kind === "text" ? "Nota de terreno" : kind === "audio" ? "Nota de audio" : kind === "image" ? "Fotografía de terreno" : "Video de terreno";
     const detail = kind === "text" ? item.text : `${item.file_name || "Archivo"} · ${routineEvidenceSize(item.blob?.size || item.size_bytes)}`;
     return `
     <div class="routine-evidence-item">
@@ -2819,15 +2831,83 @@ function setRoutineInspectionMessage(message, success = false) {
   element.classList.toggle("success", !!success);
 }
 
+function selectedRoutineInspectionCategory() {
+  const type = String($("routineInspectionCategory")?.value || "").toUpperCase();
+  return (activeFieldInspectionData?.categories || []).find((category) => String(category.type || "").toUpperCase() === type) || null;
+}
+
+function populateRoutineInspectionCategories(categories = []) {
+  const select = $("routineInspectionCategory");
+  if (!select) return;
+  const selected = select.value;
+  select.innerHTML = categories.map((category) => `<option value="${escapeHtml(category.type)}">${escapeHtml(category.icon || "📝")} ${escapeHtml(category.title || category.type)}${category.visible_to_neighbor ? "" : " · exclusiva resolutor"}</option>`).join("");
+  if (selected && [...select.options].some((option) => option.value === selected)) select.value = selected;
+}
+
+function syncRoutineInspectionPresentation() {
+  const mining = isMiningHseExperience();
+  $("routineCityClassification")?.classList.toggle("hidden", mining);
+  $("routineMiningAreaField")?.classList.toggle("hidden", !mining);
+  $("routineCityAreaField")?.classList.toggle("hidden", mining);
+  $("routineInspectionAlertToggle")?.classList.toggle("hidden", mining);
+  $("routineInspectionGps")?.classList.toggle("hidden", mining);
+  if ($("routineInspectionEyebrow")) $("routineInspectionEyebrow").textContent = mining ? "Seguridad operacional" : "Patrullaje e inspección municipal";
+  if ($("routineInspectionHeading")) $("routineInspectionHeading").textContent = mining ? "Inspección de rutina" : "Nueva inspección de terreno";
+  if ($("routineInspectionIntro")) $("routineInspectionIntro").textContent = mining
+    ? "Registra un recorrido preventivo independiente de los casos y emergencias."
+    : "Clasifica la inspección, registra antecedentes y evidencia, y decide si el hallazgo debe convertirse en una alerta georreferenciada para la Central.";
+  if ($("routineInspectionTitleLabel")) $("routineInspectionTitleLabel").textContent = mining ? "Título de la inspección" : "Asunto o título (opcional)";
+  if ($("routineInspectionTitle")) $("routineInspectionTitle").placeholder = mining ? "Ej. Inspección preoperacional del nivel 850" : "Ej. Obstáculo peligroso en vía pública";
+  if ($("routineInspectionNotesLabel")) $("routineInspectionNotesLabel").textContent = mining ? "Resumen general (opcional)" : "Antecedentes observados";
+  if ($("routineInspectionNotes")) $("routineInspectionNotes").placeholder = mining
+    ? "Síntesis de la inspección. Agrega cada hallazgo desde la bitácora de evidencias..."
+    : "Describe objetivamente la condición observada, las medidas inmediatas y cualquier antecedente útil para la Central...";
+  if ($("btnSaveRoutineInspection")) $("btnSaveRoutineInspection").textContent = mining ? "Finalizar y guardar inspección" : "Guardar inspección";
+}
+
 function resetRoutineInspectionDraft() {
   $("routineInspectionTitle").value = "";
   $("routineInspectionNotes").value = "";
+  if ($("routineInspectionLocation")) $("routineInspectionLocation").value = "";
+  if ($("routineInspectionCreateAlert")) $("routineInspectionCreateAlert").checked = false;
   routineInspectionEvidence = [];
   renderRoutineInspectionEvidence();
   setRoutineInspectionMessage("");
 }
 
+async function loadCityFieldInspections() {
+  const list = $("routineInspectionRecentList");
+  if (list) list.innerHTML = '<p class="muted">Cargando inspecciones...</p>';
+  try {
+    const data = await api("/resolver/field-inspections?limit=6");
+    activeFieldInspectionData = data;
+    populateRoutineInspectionCategories(data.categories || []);
+    const allowAlert = data.policy?.allow_alert_creation !== false && (data.categories || []).length > 0;
+    if ($("routineInspectionCreateAlert")) {
+      $("routineInspectionCreateAlert").disabled = !allowAlert;
+      if (!allowAlert) $("routineInspectionCreateAlert").checked = false;
+    }
+    const rows = data.inspections || [];
+    if (!rows.length) {
+      list.innerHTML = '<p class="muted">Aún no has registrado inspecciones.</p>';
+      return;
+    }
+    const categoryMap = new Map((data.categories || []).map((category) => [String(category.type || "").toUpperCase(), category]));
+    list.innerHTML = rows.map((item) => {
+      const date = new Date(item.completed_at || item.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? "Fecha no disponible" : date.toLocaleString("es-CL", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" });
+      const category = categoryMap.get(String(item.category_type || item.alert_type || "").toUpperCase());
+      const classification = category ? `${category.icon || "📝"} ${category.title || category.type}` : "Inspección de terreno";
+      const alert = item.linked_ticket_id ? `🚨 Alerta #${String(item.linked_ticket_id).slice(0, 8).toUpperCase()}` : "Registro preventivo sin alerta";
+      return `<article class="routine-recent-item"><div class="routine-recent-item-head"><div><h4>${escapeHtml(item.title || classification)}</h4><p>${escapeHtml(classification)} · ${escapeHtml(item.area || "Ubicación GPS")} · ${escapeHtml(dateLabel)}</p><small>${escapeHtml(alert)}</small></div><span class="routine-recent-badge">GUARDADA</span></div></article>`;
+    }).join("");
+  } catch (error) {
+    if (list) list.innerHTML = `<p class="msg">${escapeHtml(error.message || "No fue posible cargar las inspecciones")}</p>`;
+  }
+}
+
 async function loadRoutineInspections() {
+  if (!isMiningHseExperience()) return loadCityFieldInspections();
   const list = $("routineInspectionRecentList");
   if (!list) return;
   list.innerHTML = '<p class="muted">Cargando inspecciones...</p>';
@@ -2850,8 +2930,14 @@ async function loadRoutineInspections() {
 }
 
 function openRoutineInspectionPanel() {
-  if (!isMiningHseExperience()) return toast("Las inspecciones de rutina están disponibles para la experiencia HSE.");
-  populateRoutineInspectionAreas();
+  syncRoutineInspectionPresentation();
+  if (isMiningHseExperience()) populateRoutineInspectionAreas();
+  else {
+    const position = getLastKnownLatLon();
+    if ($("routineInspectionGps")) $("routineInspectionGps").textContent = position
+      ? `📍 ${Number(position.latitude).toFixed(5)}, ${Number(position.longitude).toFixed(5)} · se actualizará al guardar`
+      : "📍 La ubicación se capturará al guardar.";
+  }
   renderRoutineInspectionEvidence();
   setRoutineInspectionMessage("");
   $("routineInspectionPanel")?.classList.remove("hidden");
@@ -2926,7 +3012,110 @@ function queueRoutineInspectionVideo(event) {
   setRoutineEvidenceModalMessage("");
 }
 
+function queueRoutineInspectionPhoto(event) {
+  const input = event?.target || $("routineEvidencePhotoInput");
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!String(file.type || "").startsWith("image/")) return toast("Selecciona una fotografía válida.");
+  if (file.size > 12 * 1024 * 1024) return toast("La fotografía supera el máximo de 12 MB.");
+  routineInspectionPendingMedia = { media_type:"image", blob:file, file_name:file.name || `inspeccion-foto-${Date.now()}.jpg` };
+  input.value = "";
+  showRoutineInspectionMediaPreview(file, "image");
+  setRoutineEvidenceConfirmEnabled(true);
+  setRoutineEvidenceModalMessage("");
+}
+
+async function saveCityFieldInspection() {
+  const category = selectedRoutineInspectionCategory();
+  const notes = $("routineInspectionNotes")?.value.trim() || "";
+  if (!category) {
+    setRoutineInspectionMessage("Selecciona una categoría autorizada por el Centro de Control.");
+    $("routineInspectionCategory")?.focus();
+    return;
+  }
+  if (!notes && !routineInspectionEvidence.length) {
+    setRoutineInspectionMessage("Registra antecedentes o agrega evidencia antes de guardar.");
+    $("routineInspectionNotes")?.focus();
+    return;
+  }
+  if (routineInspectionRecorder?.state === "recording") {
+    setRoutineInspectionMessage("Detén la grabación de audio antes de guardar.");
+    return;
+  }
+  const createAlert = $("routineInspectionCreateAlert")?.checked === true;
+  const title = $("routineInspectionTitle")?.value.trim() || `Inspección de terreno · ${category.title || category.type}`;
+  const button = $("btnSaveRoutineInspection");
+  button.disabled = true;
+  button.textContent = "Capturando GPS...";
+  setRoutineInspectionMessage("Validando ubicación y preparando el registro...");
+  try {
+    const pos = await getLocation({ maximumAge:3000 });
+    validatePositionQuality(pos);
+    currentPosition = pos;
+    const textEvidence = routineInspectionEvidence
+      .filter((evidence) => routineEvidenceKind(evidence) === "text")
+      .map((evidence) => ({
+        media_type:"text",
+        text:String(evidence.text || "").trim(),
+        created_at:evidence.created_at || new Date().toISOString()
+      }))
+      .filter((evidence) => evidence.text);
+    button.textContent = createAlert ? "Creando inspección y alerta..." : "Guardando inspección...";
+    const created = await api("/resolver/field-inspections", {
+      method:"POST",
+      body:JSON.stringify({
+        title,
+        area:$("routineInspectionLocation")?.value.trim() || null,
+        category_type:String(category.type || "").toUpperCase(),
+        inspection_type:"FIELD_INSPECTION",
+        result:createAlert ? "NON_COMPLIANT" : "NOT_EVALUATED",
+        notes:notes || null,
+        text_evidence:textEvidence,
+        latitude:pos.coords.latitude,
+        longitude:pos.coords.longitude,
+        accuracy:pos.coords.accuracy,
+        create_alert:createAlert,
+        alert_type:createAlert ? String(category.type || "").toUpperCase() : null,
+        alert_title:createAlert ? title : null,
+        alert_description:createAlert ? notes || `Hallazgo detectado durante la inspección: ${title}` : null
+      })
+    });
+    const inspectionId = created.inspection?.id;
+    if (!inspectionId) throw new Error("La plataforma no devolvió el identificador de la inspección.");
+    let uploaded = 0;
+    const failed = [];
+    for (const evidence of routineInspectionEvidence.filter((item) => ["audio", "image", "video"].includes(routineEvidenceKind(item)))) {
+      try {
+        await api(`/resolver/field-inspections/${encodeURIComponent(inspectionId)}/evidence`, {
+          method:"POST",
+          body:JSON.stringify({
+            media_type:evidence.media_type,
+            data_url:await blobToDataUrl(evidence.blob),
+            file_name:evidence.file_name
+          })
+        });
+        uploaded += 1;
+      } catch (error) {
+        failed.push(error.message || "Error de carga");
+      }
+    }
+    resetRoutineInspectionDraft();
+    await loadCityFieldInspections();
+    await loadState();
+    const ticketLabel = created.ticket ? ` Alerta #${String(created.ticket.id).slice(0, 8).toUpperCase()} visible en el mapa.` : " Sin generar alerta operacional.";
+    const evidenceLabel = failed.length ? ` ${uploaded} evidencia(s) enviada(s) y ${failed.length} pendiente(s).` : "";
+    setRoutineInspectionMessage(`Inspección clasificada como ${category.title || category.type} guardada.${ticketLabel}${evidenceLabel}`, true);
+    toast(created.ticket ? "Inspección y alerta creadas" : "Inspección registrada");
+  } catch (error) {
+    setRoutineInspectionMessage(error.message || "No fue posible guardar la inspección.");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Guardar inspección";
+  }
+}
+
 async function saveRoutineInspection() {
+  if (!isMiningHseExperience()) return saveCityFieldInspection();
   const title = $("routineInspectionTitle")?.value.trim();
   if (!title) {
     setRoutineInspectionMessage("Escribe el título de la inspección.");
@@ -2967,7 +3156,7 @@ async function saveRoutineInspection() {
     }
     let uploaded = 0;
     const failed = [];
-    for (const evidence of routineInspectionEvidence.filter((item) => ["audio", "video"].includes(routineEvidenceKind(item)))) {
+    for (const evidence of routineInspectionEvidence.filter((item) => ["audio", "image", "video"].includes(routineEvidenceKind(item)))) {
       try {
         const dataUrl = await blobToDataUrl(evidence.blob);
         await api(`/resolver/safety/inspections/${encodeURIComponent(inspectionId)}/evidence`, {
@@ -3201,10 +3390,9 @@ function init() {
 
   $("btnSettings").addEventListener("click", openSettingsPanel);
   $("btnRoutineInspection")?.addEventListener("click", () => {
-    if (isMiningHseExperience()) openRoutineInspectionPanel();
-    else if (stateCache?.platform_settings?.resolver_inspection_policy?.enabled === false) {
+    if (!isMiningHseExperience() && stateCache?.platform_settings?.resolver_inspection_policy?.enabled === false) {
       toast("Las inspecciones están deshabilitadas por la configuración del Centro de Control");
-    } else openFieldInspectionPanel();
+    } else openRoutineInspectionPanel();
   });
   $("btnCloseRoutineInspection")?.addEventListener("click", closeRoutineInspectionPanel);
   $("routineInspectionPanel")?.addEventListener("click", (event) => {
@@ -3212,13 +3400,22 @@ function init() {
   });
   $("routineInspectionNoteTool")?.addEventListener("click", () => openRoutineEvidenceCapture("text"));
   $("routineInspectionAudioTool")?.addEventListener("click", () => openRoutineEvidenceCapture("audio"));
+  $("routineInspectionPhotoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("image"));
   $("routineInspectionVideoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("video"));
   $("btnCloseRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);
   $("btnCancelRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);
   $("btnConfirmRoutineEvidence")?.addEventListener("click", confirmRoutineEvidence);
   $("btnRoutineEvidenceRecord")?.addEventListener("click", toggleRoutineInspectionAudio);
+  $("btnRoutineEvidencePickPhoto")?.addEventListener("click", () => $("routineEvidencePhotoInput")?.click());
+  $("routineEvidencePhotoInput")?.addEventListener("change", queueRoutineInspectionPhoto);
   $("btnRoutineEvidencePickVideo")?.addEventListener("click", () => $("routineEvidenceVideoInput")?.click());
   $("routineEvidenceVideoInput")?.addEventListener("change", queueRoutineInspectionVideo);
+  $("routineInspectionCategory")?.addEventListener("change", () => {
+    const category = selectedRoutineInspectionCategory();
+    if (!$("routineInspectionTitle")?.value.trim() && category) {
+      $("routineInspectionTitle").value = `Inspección de terreno · ${category.title || category.type}`;
+    }
+  });
   $("routineEvidenceText")?.addEventListener("input", () => {
     setRoutineEvidenceConfirmEnabled(!!$("routineEvidenceText")?.value.trim());
   });
