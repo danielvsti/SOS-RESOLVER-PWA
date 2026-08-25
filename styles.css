@@ -193,7 +193,7 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .ticket-map { height:280px; border-radius:18px; overflow:hidden; margin-top:14px; border:1px solid var(--line); }
 
 /* Inspecciones autónomas del Profesional HSE */
-.routine-inspection-card { max-width:720px; padding:24px 24px calc(112px + env(safe-area-inset-bottom)); }
+.routine-inspection-card { max-width:720px; padding:24px 24px calc(72px + env(safe-area-inset-bottom)); }
 .routine-inspection-heading { padding-right:48px; margin-bottom:20px; }
 .routine-inspection-heading h2 { margin:5px 0 7px; font-size:27px; letter-spacing:-.025em; }
 .routine-inspection-heading p { margin:0; color:var(--muted); line-height:1.45; }
@@ -204,8 +204,11 @@ button:disabled, .disabled { opacity:.55; cursor:not-allowed; }
 .routine-evidence-title strong { display:block; margin-top:4px; }
 .routine-evidence-count { padding:6px 9px; border-radius:999px; background:#dbeafe; color:#1d4ed8; font-size:11px; font-weight:900; white-space:nowrap; }
 .routine-tools { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; margin-top:14px; }
-.routine-tools-footer { position:fixed; left:50%; bottom:0; z-index:70; width:min(720px,calc(100vw - 24px)); margin:0; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); transform:translateX(-50%); border:1px solid #dbeafe; border-bottom:0; border-radius:22px 22px 0 0; background:rgba(255,255,255,.97); box-shadow:0 -12px 30px rgba(15,23,42,.16); backdrop-filter:blur(14px); }
-.routine-tools-footer .routine-tool { min-height:68px; box-shadow:none; }
+.routine-tools-footer { position:fixed; left:50%; bottom:0; z-index:70; width:min(100%,720px); margin:0; padding:3px 8px calc(3px + env(safe-area-inset-bottom)); transform:translateX(-50%); border:0; border-top:1px solid #dbe3ef; border-radius:0; background:#fff; box-shadow:0 -6px 18px rgba(15,23,42,.12); isolation:isolate; }
+.routine-tools-footer .routine-tool { min-height:50px; padding:3px 2px; gap:1px; border:0; border-radius:12px; background:transparent; box-shadow:none; font-size:20px; }
+.routine-tools-footer .routine-tool:active { background:#eef2f7; }
+.routine-tools-footer .routine-tool span { font-size:20px; }
+.routine-tools-footer .routine-tool small { font-size:10px; line-height:1.1; white-space:nowrap; }
 .routine-tool { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; min-height:76px; padding:10px; border:1px solid #cbd5e1; background:#fff; color:#0f172a; box-shadow:0 8px 18px rgba(15,23,42,.06); }
 .routine-tool span { font-size:25px; line-height:1; }
 .routine-tool small { font-size:12px; font-weight:900; }
@@ -245,7 +248,7 @@ audio.routine-media-preview { height:50px; background:transparent; }
   .routine-evidence-modal-actions { grid-template-columns:1fr; }
   .routine-tools { grid-template-columns:repeat(4,1fr); gap:6px; }
   .routine-tool { padding:8px 4px; }
-  .routine-tools-footer { width:100%; padding-left:10px; padding-right:10px; }
+  .routine-tools-footer { width:100%; }
 }
 .routine-remove-evidence { width:34px; height:34px; padding:0; border-radius:999px; background:#fee2e2; color:#991b1b; }
 .routine-save { min-height:54px; }
