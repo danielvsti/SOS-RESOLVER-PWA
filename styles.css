@@ -403,7 +403,9 @@ audio.routine-media-preview { height:50px; background:transparent; }
 .resolver-connectivity-banner { position:sticky; top:0; z-index:35; display:none; width:100%; margin:0 0 12px; padding:10px 14px; border:1px solid #f59e0b; border-radius:14px; background:#fffbeb; color:#78350f; box-shadow:0 5px 16px rgba(120,53,15,.12); font-size:14px; font-weight:850; line-height:1.35; text-align:left; }
 @media (max-width:620px) {
   main { padding:12px; }
-  .controls-grid, .actions, .ticket-body { grid-template-columns:1fr; }
+  .actions, .ticket-body { grid-template-columns:1fr; }
+  .controls-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .control { min-width:0; padding:12px 6px; font-size:14px; line-height:1.15; }
   .route-panel { padding:8px; }
   .route-card { height:calc(100vh - 16px); border-radius:22px; padding:12px; }
   .route-map { min-height:300px; }

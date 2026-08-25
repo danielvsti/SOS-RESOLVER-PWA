@@ -1,6 +1,6 @@
-const CACHE_NAME = "queltu-resolver-v20-classified-field-inspections";
+const CACHE_NAME = "queltu-resolver-v21-mobile-status-controls";
 const APP_SHELL = [
-  "/", "/index.html", "/app.js?v=19-inspection-shortcut-diagnostic", "/styles.css?v=18-inspection-shortcut-refresh", "/queltu-brand.css?v=20260816-1", "/manifest.json",
+  "/", "/index.html", "/app.js?v=20-classified-field-inspections", "/styles.css?v=21-mobile-status-controls", "/queltu-brand.css?v=20260816-1", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
   "/icons/icon-192.png", "/icons/icon-512.png"
 ];
