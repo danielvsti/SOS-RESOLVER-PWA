@@ -49,6 +49,10 @@ let routineInspectionRecorder = null;
 let routineInspectionAudioChunks = [];
 let routineInspectionAudioStream = null;
 let routineInspectionRecordingTimeout = null;
+let routineInspectionRecordingTimerInterval = null;
+let routineInspectionRecordingStartedAt = null;
+let routineInspectionRecordingFromDock = false;
+let routineInspectionDiscardRecording = false;
 let routineInspectionCaptureMode = null;
 let routineInspectionEditingIndex = -1;
 let routineInspectionPendingMedia = null;
@@ -2698,6 +2702,31 @@ function stopRoutineInspectionRecorder() {
   routineInspectionAudioStream = null;
 }
 
+function setRoutineInspectionDockRecordingUI(active) {
+  clearInterval(routineInspectionRecordingTimerInterval);
+  routineInspectionRecordingTimerInterval = null;
+  const banner = $("routineRecordingBanner");
+  const timer = $("routineRecordingTimer");
+  const button = $("routineInspectionAudioTool");
+  if (active) {
+    routineInspectionRecordingStartedAt = Date.now();
+    if (timer) timer.textContent = "00:00";
+    banner?.classList.remove("hidden");
+    button?.classList.add("recording-active");
+    if (button) button.innerHTML = "<span>⏹️</span><small>Detener audio</small>";
+    routineInspectionRecordingTimerInterval = setInterval(() => {
+      if (timer && routineInspectionRecordingStartedAt) timer.textContent = formatRecordingTime(Date.now() - routineInspectionRecordingStartedAt);
+    }, 500);
+    navigator.vibrate?.(80);
+    return;
+  }
+  routineInspectionRecordingStartedAt = null;
+  banner?.classList.add("hidden");
+  button?.classList.remove("recording-active");
+  if (button) button.innerHTML = "<span>🎙️</span><small>Audio</small>";
+  navigator.vibrate?.([60, 80, 60]);
+}
+
 function showRoutineInspectionMediaPreview(blob, mode) {
   releaseRoutineInspectionPreview();
   if (!blob) return;
@@ -2946,10 +2975,27 @@ function openRoutineInspectionPanel() {
 }
 
 function closeRoutineInspectionPanel() {
-  if (routineInspectionRecorder?.state === "recording") routineInspectionRecorder.stop();
+  if (routineInspectionRecorder?.state === "recording") {
+    routineInspectionDiscardRecording = true;
+    routineInspectionRecorder.stop();
+  }
+  setRoutineInspectionDockRecordingUI(false);
   closeRoutineEvidenceCapture();
   $("routineInspectionPanel")?.classList.add("hidden");
   $("routineInspectionToolbar")?.classList.add("hidden");
+}
+
+async function toggleRoutineInspectionDockAudio() {
+  if (routineInspectionRecorder?.state === "recording") {
+    routineInspectionRecorder.stop();
+    return;
+  }
+  routineInspectionCaptureMode = "audio";
+  routineInspectionEditingIndex = -1;
+  routineInspectionPendingMedia = null;
+  routineInspectionRecordingFromDock = true;
+  routineInspectionDiscardRecording = false;
+  await startRoutineInspectionAudioRecording(true);
 }
 
 async function toggleRoutineInspectionAudio() {
@@ -2957,6 +3003,12 @@ async function toggleRoutineInspectionAudio() {
     routineInspectionRecorder.stop();
     return;
   }
+  routineInspectionRecordingFromDock = false;
+  routineInspectionDiscardRecording = false;
+  await startRoutineInspectionAudioRecording(false);
+}
+
+async function startRoutineInspectionAudioRecording(fromDock = false) {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("Este dispositivo no permite grabar audio desde la app.");
   try {
     releaseRoutineInspectionPreview();
@@ -2972,19 +3024,36 @@ async function toggleRoutineInspectionAudio() {
     recorder.onstop = () => {
       clearTimeout(routineInspectionRecordingTimeout);
       stopRoutineInspectionRecorder();
+      if (fromDock) setRoutineInspectionDockRecordingUI(false);
       $("routineEvidenceAudioIndicator")?.classList.remove("recording");
       if ($("btnRoutineEvidenceRecord")) $("btnRoutineEvidenceRecord").textContent = "Reemplazar grabación";
       const mimeType = recorder.mimeType || routineInspectionAudioChunks[0]?.type || "audio/webm";
       const blob = new Blob(routineInspectionAudioChunks, { type:mimeType });
-      if (!blob.size) return;
-      if (blob.size > 8 * 1024 * 1024) return toast("El audio supera el máximo de 8 MB.");
+      if (!blob.size || routineInspectionDiscardRecording) {
+        routineInspectionDiscardRecording = false;
+        routineInspectionRecordingFromDock = false;
+        return;
+      }
+      if (blob.size > 8 * 1024 * 1024) {
+        routineInspectionRecordingFromDock = false;
+        return toast("El audio supera el máximo de 8 MB.");
+      }
       const ext = fileExtensionForMime(mimeType, "webm");
-      routineInspectionPendingMedia = { media_type:"audio", blob, file_name:`inspeccion-audio-${Date.now()}.${ext}` };
+      const evidence = { media_type:"audio", blob, file_name:`inspeccion-audio-${Date.now()}.${ext}`, created_at:new Date().toISOString() };
+      if (fromDock) {
+        routineInspectionEvidence.push(evidence);
+        routineInspectionRecordingFromDock = false;
+        renderRoutineInspectionEvidence();
+        toast("Audio agregado a la bitácora");
+        return;
+      }
+      routineInspectionPendingMedia = evidence;
       showRoutineInspectionMediaPreview(blob, "audio");
       if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = "Audio listo para revisar";
       setRoutineEvidenceConfirmEnabled(true);
     };
     recorder.start();
+    if (fromDock) setRoutineInspectionDockRecordingUI(true);
     $("routineEvidenceAudioIndicator")?.classList.add("recording");
     if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = "Grabando audio...";
     if ($("btnRoutineEvidenceRecord")) $("btnRoutineEvidenceRecord").textContent = "Detener grabación";
@@ -2994,6 +3063,9 @@ async function toggleRoutineInspectionAudio() {
   } catch (error) {
     stopRoutineInspectionRecorder();
     routineInspectionRecorder = null;
+    routineInspectionRecordingFromDock = false;
+    routineInspectionDiscardRecording = false;
+    setRoutineInspectionDockRecordingUI(false);
     $("routineEvidenceAudioIndicator")?.classList.remove("recording");
     if ($("routineEvidenceAudioStatus")) $("routineEvidenceAudioStatus").textContent = "No fue posible iniciar la grabación";
     toast(error.message || "No fue posible acceder al micrófono");
@@ -3400,7 +3472,7 @@ function init() {
     if (event.target === $("routineInspectionPanel")) closeRoutineInspectionPanel();
   });
   $("routineInspectionNoteTool")?.addEventListener("click", () => openRoutineEvidenceCapture("text"));
-  $("routineInspectionAudioTool")?.addEventListener("click", () => openRoutineEvidenceCapture("audio"));
+  $("routineInspectionAudioTool")?.addEventListener("click", toggleRoutineInspectionDockAudio);
   $("routineInspectionPhotoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("image"));
   $("routineInspectionVideoTool")?.addEventListener("click", () => openRoutineEvidenceCapture("video"));
   $("btnCloseRoutineEvidence")?.addEventListener("click", closeRoutineEvidenceCapture);

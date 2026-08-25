@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#151A1D" />
   <title>QUELTU Respuesta</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="styles.css?v=23-flat-inspection-footer" />
+  <link rel="stylesheet" href="styles.css?v=24-inline-inspection-audio" />
   <link rel="stylesheet" href="queltu-brand.css?v=20260816-1" />
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -402,6 +402,12 @@
     <button id="routineInspectionVideoTool" class="routine-tool" type="button"><span>📹</span><small>Video</small></button>
   </div>
 
+  <div id="routineRecordingBanner" class="routine-recording-banner hidden" role="status" aria-live="polite">
+    <span class="rec-dot"></span>
+    <span>Grabando audio</span>
+    <span id="routineRecordingTimer">00:00</span>
+  </div>
+
   <div id="routineEvidencePanel" class="modal routine-evidence-modal hidden">
     <div class="modal-card routine-evidence-modal-card" role="dialog" aria-modal="true" aria-labelledby="routineEvidenceModalTitle">
       <button id="btnCloseRoutineEvidence" class="modal-close" type="button" aria-label="Cerrar evidencia">×</button>
@@ -535,6 +541,6 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=22-inspection-opens-without-keyboard"></script>
+  <script src="app.js?v=23-inline-inspection-audio"></script>
 </body>
 </html>
