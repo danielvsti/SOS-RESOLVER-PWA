@@ -1,6 +1,6 @@
-const CACHE_NAME = "queltu-resolver-v24-screen-anchored-inspection-footer";
+const CACHE_NAME = "queltu-resolver-v25-inspection-opens-without-keyboard";
 const APP_SHELL = [
-  "/", "/index.html", "/app.js?v=21-screen-anchored-inspection-footer", "/styles.css?v=23-flat-inspection-footer", "/queltu-brand.css?v=20260816-1", "/manifest.json",
+  "/", "/index.html", "/app.js?v=22-inspection-opens-without-keyboard", "/styles.css?v=23-flat-inspection-footer", "/queltu-brand.css?v=20260816-1", "/manifest.json",
   "/queltu-logo.png", "/queltu-symbol.png", "/vendor/jssip.min.js",
   "/icons/icon-192.png", "/icons/icon-512.png"
 ];

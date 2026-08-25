@@ -2943,7 +2943,6 @@ function openRoutineInspectionPanel() {
   $("routineInspectionPanel")?.classList.remove("hidden");
   $("routineInspectionToolbar")?.classList.remove("hidden");
   void loadRoutineInspections();
-  setTimeout(() => $("routineInspectionTitle")?.focus(), 120);
 }
 
 function closeRoutineInspectionPanel() {
